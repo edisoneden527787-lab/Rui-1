@@ -1,0 +1,127 @@
+name: 編譯 APK
+
+on:
+  push:
+    paths:
+      - "generated/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-generated-apk
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 雲端編譯
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 取出程式碼
+        uses: actions/checkout@v4
+
+      - name: 設定 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 確認產生的專案存在
+        run: |
+          set -euo pipefail
+          if [ ! -f generated/settings.gradle.kts ] && [ ! -f generated/settings.gradle ]; then
+            echo "找不到 generated 底下的 Gradle 專案。請從手機再產生一次。"
+            exit 1
+          fi
+
+      - name: 安裝 Android 命令列工具
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y unzip wget
+          SDK_ROOT="$HOME/android-sdk"
+          mkdir -p "$SDK_ROOT/cmdline-tools"
+          wget -q -O /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          rm -rf /tmp/cmdtools
+          unzip -q /tmp/cmdtools.zip -d /tmp/cmdtools
+          rm -rf "$SDK_ROOT/cmdline-tools/latest"
+          mkdir -p "$SDK_ROOT/cmdline-tools/latest"
+          mv /tmp/cmdtools/cmdline-tools/* "$SDK_ROOT/cmdline-tools/latest/"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+
+      - name: 安裝編譯需要的 Android 套件
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+          echo "sdk.dir=$ANDROID_HOME" > generated/local.properties
+          echo "Java: $(java -version 2>&1 | head -n 1)"
+          echo "sdkmanager: $(sdkmanager --version)"
+
+      - name: 決定要用 wrapper 還是系統 Gradle
+        id: gradle_mode
+        working-directory: generated
+        run: |
+          set -euo pipefail
+          if [ -f ./gradlew ] && [ -f ./gradle/wrapper/gradle-wrapper.jar ]; then
+            chmod +x ./gradlew
+            echo "mode=wrapper" >> "$GITHUB_OUTPUT"
+            echo "使用專案自帶的 Gradle Wrapper。"
+          else
+            echo "mode=system" >> "$GITHUB_OUTPUT"
+            echo "專案沒有完整的 Gradle Wrapper，改用 Gradle 8.7。"
+          fi
+
+      - name: 安裝 Gradle 8.7
+        if: steps.gradle_mode.outputs.mode == 'system'
+        run: |
+          set -euo pipefail
+          wget -q -O /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
+          sudo rm -rf /opt/gradle-8.7
+          sudo unzip -q /tmp/gradle.zip -d /opt
+          sudo chown -R "$USER:$USER" /opt/gradle-8.7
+          echo "/opt/gradle-8.7/bin" >> "$GITHUB_PATH"
+
+      - name: 編譯 Debug APK
+        working-directory: generated
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.gradle_mode.outputs.mode }}" = "wrapper" ]; then
+            ./gradlew assembleDebug --stacktrace --no-daemon
+          else
+            gradle assembleDebug --stacktrace --no-daemon
+          fi
+
+      - name: 找出 APK
+        id: apk
+        run: |
+          set -euo pipefail
+          APK=$(find generated -type f -path '*/outputs/apk/debug/*.apk' -print -quit)
+          if [ -z "$APK" ]; then
+            echo "編譯結束但沒有找到 APK。"
+            exit 1
+          fi
+          cp "$APK" "$RUNNER_TEMP/ai-app-debug.apk"
+          echo "path=$RUNNER_TEMP/ai-app-debug.apk" >> "$GITHUB_OUTPUT"
+          echo "來源：$APK"
+          ls -lh "$RUNNER_TEMP/ai-app-debug.apk"
+
+      - name: 建立 Release 並上傳 APK
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="build-${{ github.run_number }}-$(date -u +%Y%m%d%H%M%S)"
+          gh release create "$TAG" \
+            "$RUNNER_TEMP/ai-app-debug.apk" \
+            --repo "${{ github.repository }}" \
+            --title "編譯 $TAG" \
+            --notes "$(printf '由 AI App 產生器雲端編譯。\nCommit：%s\n' '${{ github.sha }}')" \
+            --target "${{ github.sha }}"
+          echo "已發布 $TAG"
+          echo "### 編譯完成" >> "$GITHUB_STEP_SUMMARY"
+          echo "標籤：$TAG" >> "$GITHUB_STEP_SUMMARY"
