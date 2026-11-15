@@ -1,59 +1,33 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
-
 android {
-    namespace = "com.generated.app"
-    compileSdk = 34
-
+    namespace = "com.rui.photostudio"
+    compileSdk = 36
     defaultConfig {
-        applicationId = "com.generated.a21c37221"
-        minSdk = 24
-        targetSdk = 34
+        applicationId = "com.rui.photostudio"
+        minSdk = 29
+        targetSdk = 36
         versionCode = 1
-        versionName = "1.0"
+        versionName = "0.1.0"
     }
-
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-        }
-    }
-
+    buildFeatures { compose = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
-    buildFeatures {
-        compose = true
-        buildConfig = false
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
-    }
-
-    lint {
-        abortOnError = false
-        checkReleaseBuilds = false
-    }
+    kotlinOptions { jvmTarget = "17" }
 }
-
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
-    implementation(composeBom)
+    implementation(platform("androidx.compose:compose-bom:2025.05.00"))
+    implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-core")
-    implementation("androidx.activity:activity-compose:1.9.1")
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    debugImplementation("androidx.compose.ui:ui-tooling")
 }
