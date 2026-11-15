@@ -268,7 +268,7 @@ class MainActivity:ComponentActivity(){
   }
   if(showFullscreen){
    androidx.compose.ui.window.Dialog(onDismissRequest={showFullscreen=false},properties=androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth=false)){
-    Box(Modifier.fillMaxSize().background(Color.Black).pointerInput(Unit){androidx.compose.foundation.gestures.detectTapGestures(onTap={showFullscreen=false})},contentAlignment=Alignment.Center){
+    Box(Modifier.fillMaxSize().background(Color.Black).pointerInput(Unit){detectTapGestures(onTap={showFullscreen=false})},contentAlignment=Alignment.Center){
      preview?.let{Image(it.asImageBitmap(),null,Modifier.fillMaxSize(),contentScale=ContentScale.Fit)}
      Text("點擊照片返回編輯",color=Color.White,modifier=Modifier.align(Alignment.BottomCenter).padding(20.dp))
     }
