@@ -15,8 +15,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -94,7 +92,7 @@ private fun Studio() {
                     Text("PHOTO STUDIO", color = ink, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
                 }
                 if (original != null) {
-                    TextButton(onClick = { before = !before }) { Text(if (before) "EDITED" else "BEFORE", color = gold) }
+                    TextButton(onClick = { before = !before }) { Text(if (before) "SHOW EDITED" else "BEFORE", color = gold) }
                     TextButton(onClick = {
                         exposure = 0f; contrast = 0f; saturation = 0f; temperature = 0f
                     }) { Text("RESET", color = ink) }
@@ -129,9 +127,6 @@ private fun Studio() {
                 if (busy) CircularProgressIndicator(color = gold, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp))
             }
             Text(note, color = gold, fontSize = 11.sp, modifier = Modifier.padding(vertical = 8.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(4) { i -> FilterChip(selected = i == 0, onClick = {}, label = { Text(listOf("Light","Color","Detail","AI")[i]) }) }
-            }
             Column(Modifier.heightIn(max = 270.dp).verticalScroll(rememberScrollState()).padding(top = 8.dp)) {
                 SliderRow("曝光", exposure, -2f, 2f) { exposure = it }
                 SliderRow("對比", contrast, -100f, 100f) { contrast = it }
