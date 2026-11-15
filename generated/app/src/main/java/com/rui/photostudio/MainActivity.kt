@@ -10,6 +10,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -67,6 +73,7 @@ class MainActivity:ComponentActivity(){
  var busy by remember{mutableStateOf(false)}
  var note by remember{mutableStateOf("從相簿選擇照片開始編輯")}
  var bandIndex by remember{mutableIntStateOf(0)}
+ var curveChannel by remember{mutableStateOf("Master")}
  var showHistory by remember{mutableStateOf(false)}
  var history by remember{mutableStateOf(runCatching{
   val raw=prefs.getString("entries","[]")?: "[]"
@@ -134,10 +141,7 @@ class MainActivity:ComponentActivity(){
     Control("HSL 色相",b.hueShift,-100f..100f){val a=settings.hsl.toMutableList();while(a.size<=bandIndex)a.add(HslBand(bandHue[a.size]));a[bandIndex]=b.copy(hueShift=it);settings=settings.copy(hsl=a)},
     Control("HSL 飽和度 / Color Mixer",b.saturationShift,-100f..100f){val a=settings.hsl.toMutableList();while(a.size<=bandIndex)a.add(HslBand(bandHue[a.size]));a[bandIndex]=b.copy(saturationShift=it);settings=settings.copy(hsl=a)},
     Control("HSL 明亮度",b.luminanceShift,-100f..100f){val a=settings.hsl.toMutableList();while(a.size<=bandIndex)a.add(HslBand(bandHue[a.size]));a[bandIndex]=b.copy(luminanceShift=it);settings=settings.copy(hsl=a)},
-    Control("Tone Curve 中點",settings.curves.master.getOrNull(1)?.y?:.5f,.05f.. .95f){settings=settings.copy(curves=settings.curves.copy(master=listOf(CurvePoint(0f,0f),CurvePoint(.5f,it),CurvePoint(1f,1f))))},
-    Control("RGB Red 曲線",settings.curves.red.getOrNull(1)?.y?:.5f,.05f.. .95f){settings=settings.copy(curves=settings.curves.copy(red=listOf(CurvePoint(0f,0f),CurvePoint(.5f,it),CurvePoint(1f,1f))))},
-    Control("RGB Green 曲線",settings.curves.green.getOrNull(1)?.y?:.5f,.05f.. .95f){settings=settings.copy(curves=settings.curves.copy(green=listOf(CurvePoint(0f,0f),CurvePoint(.5f,it),CurvePoint(1f,1f))))},
-    Control("RGB Blue 曲線",settings.curves.blue.getOrNull(1)?.y?:.5f,.05f.. .95f){settings=settings.copy(curves=settings.curves.copy(blue=listOf(CurvePoint(0f,0f),CurvePoint(.5f,it),CurvePoint(1f,1f))))},
+
     Control("陰影色相",settings.shadowsGrade.hue,0f..360f){settings=settings.copy(shadowsGrade=settings.shadowsGrade.copy(hue=it))},
     Control("陰影飽和度",settings.shadowsGrade.saturation,0f..100f){settings=settings.copy(shadowsGrade=settings.shadowsGrade.copy(saturation=it))},
     Control("中間調色相",settings.midtonesGrade.hue,0f..360f){settings=settings.copy(midtonesGrade=settings.midtonesGrade.copy(hue=it))},
@@ -188,6 +192,28 @@ class MainActivity:ComponentActivity(){
    Row(verticalAlignment=Alignment.CenterVertically){Text("全域",color=if(!local)Accent else Color.LightGray);Switch(checked=local,onCheckedChange={local=it});Text("局部遮罩",color=if(local)Accent else Color.LightGray)}
    Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("基本","色彩","細節").forEach{FilterChip(selected=tab==it,onClick={tab=it},label={Text(it)})}}
    if(tab=="色彩")Row(horizontalArrangement=Arrangement.spacedBy(2.dp)){listOf("紅","黃","綠","青","藍","洋紅").forEachIndexed{i,n->FilterChip(selected=bandIndex==i,onClick={bandIndex=i},label={Text(n)})}}
+   if(tab=="色彩"){
+    Text("曲線調色",color=Color.White,fontSize=15.sp,fontWeight=FontWeight.SemiBold,modifier=Modifier.padding(top=8.dp,bottom=4.dp))
+    Row(horizontalArrangement=Arrangement.spacedBy(5.dp)){
+     listOf("Master","Red","Green","Blue").forEach{ch->FilterChip(selected=curveChannel==ch,onClick={curveChannel=ch},label={Text(ch)})}
+    }
+    val curvePoints=when(curveChannel){
+     "Red"->settings.curves.red
+     "Green"->settings.curves.green
+     "Blue"->settings.curves.blue
+     else->settings.curves.master
+    }.ifEmpty{listOf(CurvePoint(0f,0f),CurvePoint(.5f,.5f),CurvePoint(1f,1f))}
+    CurveEditor(curvePoints,when(curveChannel){"Red"->Color(0xFFFF6666);"Green"->Color(0xFF66DD88);"Blue"->Color(0xFF6699FF);else->Color.White}){pts->
+     val curves=when(curveChannel){
+      "Red"->settings.curves.copy(red=pts)
+      "Green"->settings.curves.copy(green=pts)
+      "Blue"->settings.curves.copy(blue=pts)
+      else->settings.curves.copy(master=pts)
+     }
+     settings=settings.copy(curves=curves)
+    }
+    Text("拖曳控制點調整曲線；點擊曲線附近以新增控制點。曲線也會套用於局部遮罩模式。",color=Color.LightGray,fontSize=10.sp,modifier=Modifier.padding(bottom=6.dp))
+   }
    LazyColumn(Modifier.weight(1.05f),contentPadding=PaddingValues(bottom=14.dp)){
     items(controls){c->Column(Modifier.fillMaxWidth().padding(vertical=2.dp)){
      Row(verticalAlignment=Alignment.CenterVertically){Text(c.title,color=Color.White,fontSize=12.sp,modifier=Modifier.weight(1f));Text("%.2f".format(c.value),color=Color.LightGray,fontSize=11.sp)}
@@ -223,6 +249,67 @@ class MainActivity:ComponentActivity(){
     confirmButton={TextButton(onClick={showHistory=false}){Text("關閉")}},
     dismissButton={TextButton(onClick={history=emptyList();prefs.edit().remove("entries").apply()}){Text("清除紀錄")}}
    )
+  }
+ }
+}
+
+
+@Composable private fun CurveEditor(points:List<CurvePoint>,lineColor:Color,onChange:(List<CurvePoint>)->Unit){
+ val currentPoints by rememberUpdatedState(points)
+ val change by rememberUpdatedState(onChange)
+ Canvas(Modifier.fillMaxWidth().height(220.dp).background(Color(0xFF14171B),RoundedCornerShape(12.dp)).pointerInput(Unit){
+  var working=emptyList<CurvePoint>()
+  var selected=-1
+  detectDragGestures(
+   onDragStart={p->
+    working=currentPoints.toList()
+    val w=size.width.coerceAtLeast(1f);val h=size.height.coerceAtLeast(1f)
+    val px=p.x/w;val py=1f-p.y/h
+    val nearest=working.indices.minByOrNull{i->
+     val dx=(working[i].x-px)*w;val dy=(working[i].y-py)*h
+     dx*dx+dy*dy
+    }
+    selected=if(nearest!=null){
+     val dx=(working[nearest].x-px)*w;val dy=(working[nearest].y-py)*h
+     if(dx*dx+dy*dy<1600f)nearest else -1
+    }else -1
+    if(selected<0){
+     val inserted=CurvePoint(px.coerceIn(.01f,.99f),py.coerceIn(0f,1f))
+     working=(working+inserted).sortedBy{it.x}
+     selected=working.indexOf(inserted)
+     change(working)
+    }
+   },
+   onDrag={event,_->
+    event.consume()
+    if(selected>=0&&selected<working.size){
+     val w=size.width.coerceAtLeast(1f);val h=size.height.coerceAtLeast(1f)
+     val old=working[selected]
+     val minX=if(selected==0)0f else working[selected-1].x+.005f
+     val maxX=if(selected==working.lastIndex)1f else working[selected+1].x-.005f
+     val nx=if(selected==0)0f else if(selected==working.lastIndex)1f else (old.x+event.positionChange().x/w).coerceIn(minX,maxX)
+     val ny=(old.y-event.positionChange().y/h).coerceIn(0f,1f)
+     working=working.toMutableList().also{it[selected]=CurvePoint(nx,ny)}
+     change(working)
+    }
+   }
+  )
+ }){
+  val w=size.width;val h=size.height
+  for(i in 0..4){
+   val p=i/4f
+   drawLine(Color(0xFF343A42),Offset(w*p,0f),Offset(w*p,h),1f)
+   drawLine(Color(0xFF343A42),Offset(0f,h*p),Offset(w,h*p),1f)
+  }
+  val sorted=points.sortedBy{it.x}
+  if(sorted.size>=2){
+   val path=Path()
+   sorted.forEachIndexed{i,p->
+    val x=p.x.coerceIn(0f,1f)*w;val y=(1f-p.y.coerceIn(0f,1f))*h
+    if(i==0)path.moveTo(x,y)else path.lineTo(x,y)
+   }
+   drawPath(path,lineColor,style=Stroke(width=3f))
+   sorted.forEach{p->drawCircle(lineColor,7f,Offset(p.x.coerceIn(0f,1f)*w,(1f-p.y.coerceIn(0f,1f))*h));drawCircle(Color(0xFF101216),3f,Offset(p.x.coerceIn(0f,1f)*w,(1f-p.y.coerceIn(0f,1f))*h))}
   }
  }
 }
