@@ -206,6 +206,37 @@ object ProfessionalEngine {
         return Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888).also{it.setPixels(a,0,w,0,0,w,h)}
     }
 
+
+    /** Pixel-accurate mask path used by brush/gradient/AI selections. */
+    fun apply(source: Bitmap, settings: ProfessionalSettings, mask: PixelMask): Bitmap {
+        require(mask.width > 0 && mask.height > 0)
+        val adjusted = apply(source, settings)
+        val w = source.width
+        val h = source.height
+        val originalPixels = IntArray(w * h)
+        val adjustedPixels = IntArray(w * h)
+        source.getPixels(originalPixels, 0, w, 0, 0, w, h)
+        adjusted.getPixels(adjustedPixels, 0, w, 0, 0, w, h)
+        val out = IntArray(w * h)
+        for (y in 0 until h) for (x in 0 until w) {
+            val i = y * w + x
+            val mx = ((x + .5f) / w * mask.width).toInt().coerceIn(0, mask.width - 1)
+            val my = ((y + .5f) / h * mask.height).toInt().coerceIn(0, mask.height - 1)
+            val amount = mask.valueAt(mx, my).coerceIn(0f, 1f)
+            val a = originalPixels[i]
+            val b = adjustedPixels[i]
+            fun mix(shift: Int): Int {
+                val av = (a ushr shift) and 255
+                val bv = (b ushr shift) and 255
+                return (av + (bv - av) * amount).toInt().coerceIn(0, 255)
+            }
+            out[i] = (mix(24) shl 24) or (mix(16) shl 16) or (mix(8) shl 8) or mix(0)
+        }
+        return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
+            it.setPixels(out, 0, w, 0, 0, w, h)
+        }
+    }
+
     private fun sampleChannel(p:IntArray,w:Int,h:Int,x:Int,y:Int,shift:Int)=
         ((p[y.coerceIn(0,h-1)*w+x.coerceIn(0,w-1)] ushr shift) and 255)
 
