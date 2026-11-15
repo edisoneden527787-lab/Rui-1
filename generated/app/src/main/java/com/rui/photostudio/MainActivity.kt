@@ -86,6 +86,9 @@ class MainActivity:ComponentActivity(){
  var brushPoints by remember{mutableStateOf(listOf<BrushPoint>())}
  var brushDiameter by remember{mutableFloatStateOf(90f)}
  var brushErase by remember{mutableStateOf(false)}
+ var layers by remember{mutableStateOf(listOf(LayerNode("layer-1","調整圖層 1",LayerKind.ADJUSTMENT,adjustments=ProfessionalSettings())))}
+ var selectedLayerId by remember{mutableStateOf("layer-1")}
+ var showLayers by remember{mutableStateOf(false)}
  var activeMask by remember{mutableStateOf<PixelMask?>(null)}
  var busy by remember{mutableStateOf(false)}
  var note by remember{mutableStateOf("從相簿選擇照片開始編輯")}
@@ -107,6 +110,8 @@ class MainActivity:ComponentActivity(){
     source=loaded
     sourceUri=savedUri?.toString().orEmpty()
     settings=ProfessionalSettings()
+    layers=listOf(LayerNode("layer-1","調整圖層 1",LayerKind.ADJUSTMENT,adjustments=ProfessionalSettings()))
+    selectedLayerId="layer-1"
     note=if(loaded==null)"讀取照片失敗" else "已從相簿載入照片"
     busy=false
    }
@@ -129,20 +134,20 @@ class MainActivity:ComponentActivity(){
     if(maskInverted)generated=generated.inverted()
     if(maskFeather>0f)generated=generated.feather(maskFeather*scale)
     activeMask=generated
-    LayerEngine.render(small,listOf(LayerNode(
-      id="local-adjustment",name="局部調整",kind=LayerKind.ADJUSTMENT,
-      adjustments=settings,mask=generated
-    )))
+    val renderLayers=layers.map{if(it.id==selectedLayerId)it.copy(adjustments=settings,mask=generated)else it}
+    LayerEngine.render(small,renderLayers)
    }else{
     activeMask=null
-    LayerEngine.render(small,listOf(LayerNode(
-      id="global-adjustment",name="全域調整",kind=LayerKind.ADJUSTMENT,
-      adjustments=settings
-    )))
+    val renderLayers=layers.map{if(it.id==selectedLayerId)it.copy(adjustments=settings,mask=null)else it}
+    LayerEngine.render(small,renderLayers)
    }
   }
   preview=result
   busy=false
+ }
+
+ LaunchedEffect(settings,selectedLayerId){
+  layers=layers.map{if(it.id==selectedLayerId&&it.kind==LayerKind.ADJUSTMENT)it.copy(adjustments=settings)else it}
  }
 
  // Debounced snapshots provide undo/redo without storing every slider frame.
@@ -227,6 +232,7 @@ class MainActivity:ComponentActivity(){
    Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){
     Button(onClick={picker.launch("image/*")},modifier=Modifier.weight(1f)){Text("開啟相簿")}
     OutlinedButton(onClick={showHistory=true}){Text("歷史")}
+    OutlinedButton(onClick={showLayers=!showLayers}){Text("圖層")}
     OutlinedButton(enabled=undoStack.isNotEmpty(),onClick={
      if(undoStack.isNotEmpty()){
       val target=undoStack.last();redoStack=(redoStack+settings).takeLast(100)
@@ -247,8 +253,8 @@ class MainActivity:ComponentActivity(){
        else PixelMask.radialGradient(img.width,img.height,.5f,.5f,.43f,.43f,.38f)
       if(maskInverted)mask=mask.inverted()
       if(maskFeather>0f)mask=mask.feather(maskFeather)
-      LayerEngine.render(img,listOf(LayerNode(id="export-adjustment",name="局部調整",kind=LayerKind.ADJUSTMENT,adjustments=settings,mask=mask)))
-     }else LayerEngine.render(img,listOf(LayerNode(id="export-adjustment",name="全域調整",kind=LayerKind.ADJUSTMENT,adjustments=settings)))
+      LayerEngine.render(img,layers.map{if(it.id==selectedLayerId)it.copy(adjustments=settings,mask=mask)else it})
+     }else LayerEngine.render(img,layers.map{if(it.id==selectedLayerId)it.copy(adjustments=settings,mask=null)else it})
      save(context,out)};note=if(ok)"匯出完成"else"匯出失敗";Toast.makeText(context,if(ok)"已成功匯出至相簿：Rui Photo Studio" else "匯出失敗，請檢查儲存空間後重試",Toast.LENGTH_LONG).show();busy=false}}
     }){Text("匯出")}
    }
@@ -335,6 +341,41 @@ class MainActivity:ComponentActivity(){
      settings=settings.copy(curves=curves)
     }
     Text("拖曳控制點調整曲線；點擊曲線附近以新增控制點。曲線也會套用於局部遮罩模式。",color=Color.LightGray,fontSize=10.sp,modifier=Modifier.padding(bottom=6.dp))
+   }
+   if(showLayers){
+    Column(Modifier.fillMaxWidth().background(Color(0xFF15181D),RoundedCornerShape(12.dp)).padding(10.dp)){
+     Row(verticalAlignment=Alignment.CenterVertically){
+      Text("圖層管理",color=Color.White,fontSize=14.sp,fontWeight=FontWeight.SemiBold,modifier=Modifier.weight(1f))
+      TextButton(onClick={
+       val id="layer-"+System.currentTimeMillis()
+       val fresh=LayerNode(id,"調整圖層 ${layers.size+1}",LayerKind.ADJUSTMENT,adjustments=ProfessionalSettings())
+       layers=layers+fresh;selectedLayerId=id;settings=ProfessionalSettings()
+      }){Text("＋ 新增")}
+      TextButton(enabled=layers.size>1,onClick={
+       layers=layers.filterNot{it.id==selectedLayerId}
+       val next=layers.last();selectedLayerId=next.id;settings=next.adjustments?:ProfessionalSettings()
+      }){Text("刪除")}
+     }
+     layers.asReversed().forEach{layer->
+      Row(verticalAlignment=Alignment.CenterVertically){
+       Checkbox(checked=layer.visible,onCheckedChange={v->layers=layers.map{if(it.id==layer.id)it.copy(visible=v)else it}})
+       Text(layer.name,color=if(layer.id==selectedLayerId)Accent else Color.White,fontSize=12.sp,modifier=Modifier.weight(1f))
+       TextButton(onClick={selectedLayerId=layer.id;settings=layer.adjustments?:ProfessionalSettings()}){Text(if(layer.id==selectedLayerId)"編輯中" else "選取")}
+      }
+      if(layer.id==selectedLayerId){
+       Row(verticalAlignment=Alignment.CenterVertically){
+        Text("不透明度",color=Color.LightGray,fontSize=10.sp,modifier=Modifier.width(58.dp))
+        Slider(value=layer.opacity,onValueChange={v->layers=layers.map{if(it.id==layer.id)it.copy(opacity=v)else it}},valueRange=0f..1f,modifier=Modifier.weight(1f))
+        Text("${(layer.opacity*100).toInt()}%",color=Color.White,fontSize=10.sp)
+       }
+       Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){
+        listOf("正常" to LayerBlendMode.NORMAL,"色彩增值" to LayerBlendMode.MULTIPLY,"濾色" to LayerBlendMode.SCREEN,"覆蓋" to LayerBlendMode.OVERLAY).forEach{(label,mode)->
+         FilterChip(selected=layer.blendMode==mode,onClick={layers=layers.map{if(it.id==layer.id)it.copy(blendMode=mode)else it}},label={Text(label,fontSize=10.sp)})
+        }
+       }
+      }
+     }
+    }
    }
    LazyColumn(Modifier.weight(1.05f),contentPadding=PaddingValues(bottom=14.dp)){
     items(controls){c->Column(Modifier.fillMaxWidth().padding(vertical=2.dp)){
