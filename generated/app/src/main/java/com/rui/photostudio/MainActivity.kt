@@ -84,6 +84,7 @@ class MainActivity:ComponentActivity(){
  var showMaskOverlay by remember{mutableStateOf(true)}
  var maskRevision by remember{mutableIntStateOf(0)}
  var brushPoints by remember{mutableStateOf(listOf<BrushPoint>())}
+ var brushBaseMask by remember{mutableStateOf<PixelMask?>(null)}
  var brushDiameter by remember{mutableFloatStateOf(90f)}
  var brushErase by remember{mutableStateOf(false)}
  var layers by remember{mutableStateOf(listOf(LayerNode("layer-1","調整圖層 1",LayerKind.ADJUSTMENT,adjustments=ProfessionalSettings())))}
@@ -128,7 +129,7 @@ class MainActivity:ComponentActivity(){
    if(local){
     var generated=when(maskKind){
       "線性"->PixelMask.linearGradient(small.width,small.height,.08f,.5f,.92f,.5f)
-      "筆刷"->PixelMask.brush(small.width,small.height,brushPoints,brushDiameter*scale,0.78f,!brushErase,activeMask?.takeIf{it.width==small.width&&it.height==small.height})
+      "筆刷"->PixelMask.brush(small.width,small.height,brushPoints,brushDiameter*scale,0.78f,!brushErase,brushBaseMask?.takeIf{it.width==small.width&&it.height==small.height}?:PixelMask.empty(small.width,small.height))
       else->PixelMask.radialGradient(small.width,small.height,.5f,.5f,.43f,.43f,.38f)
     }
     if(maskInverted)generated=generated.inverted()
@@ -272,8 +273,18 @@ class MainActivity:ComponentActivity(){
        return BrushPoint(((p.x-left)/scale).coerceIn(0f,image.width-1f),((p.y-top)/scale).coerceIn(0f,image.height-1f))
       }
       detectDragGestures(
-       onDragStart={p->brushPoints=brushPoints+mapPoint(p);maskRevision++},
-       onDrag={change,_->change.consume();brushPoints=brushPoints+mapPoint(change.position);maskRevision++}
+       onDragStart={p->
+        if(brushBaseMask==null)brushBaseMask=PixelMask.empty(image.width,image.height)
+        brushPoints=listOf(mapPoint(p));maskRevision++
+       },
+       onDrag={change,_->change.consume();brushPoints=brushPoints+mapPoint(change.position);maskRevision++},
+       onDragEnd={
+        val base=brushBaseMask?:PixelMask.empty(image.width,image.height)
+        val committed=PixelMask.brush(image.width,image.height,brushPoints,brushDiameter,0.78f,!brushErase,base)
+        brushBaseMask=committed
+        activeMask=if(maskInverted)committed.inverted()else committed
+        brushPoints=emptyList();maskRevision++
+       }
       )
      }
     },contentAlignment=Alignment.Center){
@@ -292,7 +303,7 @@ class MainActivity:ComponentActivity(){
       Text("遮罩形狀",color=Color.White,fontSize=12.sp)
       FilterChip(selected=maskKind=="圓形",onClick={maskKind="圓形";maskRevision++},label={Text("徑向")})
       FilterChip(selected=maskKind=="線性",onClick={maskKind="線性";maskRevision++},label={Text("線性")})
-      FilterChip(selected=maskKind=="筆刷",onClick={maskKind="筆刷";brushPoints=emptyList();activeMask=null;maskRevision++},label={Text("筆刷")})
+      FilterChip(selected=maskKind=="筆刷",onClick={maskKind="筆刷";brushPoints=emptyList();brushBaseMask=preview?.let{PixelMask.empty(it.width,it.height)};activeMask=brushBaseMask;maskRevision++},label={Text("筆刷")})
       Spacer(Modifier.weight(1f))
       TextButton(onClick={maskInverted=!maskInverted;maskRevision++}){Text(if(maskInverted)"已反轉" else "反轉")}
      }
@@ -311,7 +322,7 @@ class MainActivity:ComponentActivity(){
        Text("筆刷模式",color=Color.White,fontSize=11.sp,modifier=Modifier.weight(1f))
        FilterChip(selected=!brushErase,onClick={brushErase=false;maskRevision++},label={Text("加入")})
        FilterChip(selected=brushErase,onClick={brushErase=true;maskRevision++},label={Text("擦除")})
-       TextButton(onClick={brushPoints=emptyList();maskRevision++}){Text("清除筆畫")}
+       TextButton(onClick={brushPoints=emptyList();brushBaseMask=preview?.let{PixelMask.empty(it.width,it.height)};activeMask=brushBaseMask;maskRevision++}){Text("清除筆畫")}
       }
      }
      Row(verticalAlignment=Alignment.CenterVertically){
