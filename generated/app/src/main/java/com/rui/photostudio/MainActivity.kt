@@ -33,6 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -76,9 +77,10 @@ class MainActivity:ComponentActivity(){
   if(uri!=null){
    busy=true
    scope.launch{
-    val loaded=withContext(Dispatchers.IO){decode(context,uri)}
+    val savedUri=withContext(Dispatchers.IO){copyToHistoryStorage(context,uri)}
+    val loaded=if(savedUri!=null)withContext(Dispatchers.IO){decode(context,savedUri)}else null
     source=loaded
-    sourceUri=uri.toString()
+    sourceUri=savedUri?.toString().orEmpty()
     settings=ProfessionalSettings()
     note=if(loaded==null)"讀取照片失敗" else "已從相簿載入照片"
     busy=false
@@ -225,6 +227,14 @@ class MainActivity:ComponentActivity(){
  }
 }
 
+private fun copyToHistoryStorage(context:android.content.Context,uri:Uri):Uri?{
+ return try{
+  val dir=File(context.filesDir,"history_images").apply{mkdirs()}
+  val target=File(dir,"photo_"+System.currentTimeMillis()+".img")
+  context.contentResolver.openInputStream(uri)?.use{input->target.outputStream().use{output->input.copyTo(output)}}
+  if(target.exists()&&target.length()>0)Uri.fromFile(target)else null
+ }catch(_:Exception){null}
+}
 private fun decode(context:android.content.Context,uri:Uri):Bitmap?{
  return try{
   val bounds=BitmapFactory.Options().apply{inJustDecodeBounds=true}
