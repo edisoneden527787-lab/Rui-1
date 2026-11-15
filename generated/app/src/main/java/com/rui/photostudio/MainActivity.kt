@@ -31,6 +31,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.gson.Gson
@@ -69,6 +71,10 @@ class MainActivity:ComponentActivity(){
  var sourceUri by remember{mutableStateOf("")}
  var preview by remember{mutableStateOf<Bitmap?>(null)}
  var settings by remember{mutableStateOf(ProfessionalSettings())}
+ var undoStack by remember{mutableStateOf(listOf<ProfessionalSettings>())}
+ var redoStack by remember{mutableStateOf(listOf<ProfessionalSettings>())}
+ var lastSnapshot by remember{mutableStateOf(settings)}
+ var historyAction by remember{mutableStateOf(false)}
  var tab by remember{mutableStateOf("基本")}
  var local by remember{mutableStateOf(false)}
  var busy by remember{mutableStateOf(false)}
@@ -108,6 +114,19 @@ class MainActivity:ComponentActivity(){
   }
   preview=result
   busy=false
+ }
+
+ // Debounced snapshots provide undo/redo without storing every slider frame.
+ LaunchedEffect(settings){
+  if(historyAction){lastSnapshot=settings;historyAction=false}
+  else{
+   delay(300)
+   if(settings!=lastSnapshot){
+    undoStack=(undoStack+lastSnapshot).takeLast(100)
+    redoStack=emptyList()
+    lastSnapshot=settings
+   }
+  }
  }
 
  // Persist a snapshot after the user pauses editing; history survives app restarts.
@@ -179,7 +198,19 @@ class MainActivity:ComponentActivity(){
    Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){
     Button(onClick={picker.launch("image/*")},modifier=Modifier.weight(1f)){Text("開啟相簿")}
     OutlinedButton(onClick={showHistory=true}){Text("歷史")}
-    OutlinedButton(onClick={settings=ProfessionalSettings()}){Text("重設")}
+    OutlinedButton(enabled=undoStack.isNotEmpty(),onClick={
+     if(undoStack.isNotEmpty()){
+      val target=undoStack.last();redoStack=(redoStack+settings).takeLast(100)
+      undoStack=undoStack.dropLast(1);historyAction=true;settings=target
+     }
+    }){Text("上一步")}
+    OutlinedButton(enabled=redoStack.isNotEmpty(),onClick={
+     if(redoStack.isNotEmpty()){
+      val target=redoStack.last();undoStack=(undoStack+settings).takeLast(100)
+      redoStack=redoStack.dropLast(1);historyAction=true;settings=target
+     }
+    }){Text("下一步")}
+    OutlinedButton(onClick={settings=ProfessionalSettings()}){Text("還原全部")}
     Button(enabled=source!=null&&!busy,onClick={
      val img=source
      if(img!=null){busy=true;scope.launch{val ok=withContext(Dispatchers.IO){val out=if(local)ProfessionalEngine.apply(img,settings,RadialMask(.5f,.5f,.42f,.42f))else ProfessionalEngine.apply(img,settings);save(context,out)};note=if(ok)"匯出完成"else"匯出失敗";Toast.makeText(context,if(ok)"已成功匯出至相簿：Rui Photo Studio" else "匯出失敗，請檢查儲存空間後重試",Toast.LENGTH_LONG).show();busy=false}}
@@ -218,7 +249,18 @@ class MainActivity:ComponentActivity(){
    }
    LazyColumn(Modifier.weight(1.05f),contentPadding=PaddingValues(bottom=14.dp)){
     items(controls){c->Column(Modifier.fillMaxWidth().padding(vertical=2.dp)){
-     Row(verticalAlignment=Alignment.CenterVertically){Text(c.title,color=Color.White,fontSize=12.sp,modifier=Modifier.weight(1f));Text("%.2f".format(c.value),color=Color.LightGray,fontSize=11.sp)}
+     Row(verticalAlignment=Alignment.CenterVertically){
+      Text(c.title,color=Color.White,fontSize=12.sp,modifier=Modifier.weight(1f))
+      OutlinedTextField(
+       value=if(c.value.isFinite()) "%.2f".format(Locale.US,c.value) else "0",
+       onValueChange={raw->raw.toFloatOrNull()?.let{v->c.set(v.coerceIn(c.range.start,c.range.endInclusive))}},
+       modifier=Modifier.width(104.dp).height(54.dp),
+       singleLine=true,
+       textStyle=androidx.compose.ui.text.TextStyle(color=Color.White,fontSize=12.sp),
+       keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),
+       shape=RoundedCornerShape(10.dp)
+      )
+     }
      Slider(value=c.value.coerceIn(c.range.start,c.range.endInclusive),onValueChange=c.set,valueRange=c.range)
     }}
    }
