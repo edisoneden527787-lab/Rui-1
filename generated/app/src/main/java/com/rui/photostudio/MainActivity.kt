@@ -54,7 +54,7 @@ import kotlin.math.max
 private val Bg=Color(0xFF090A0C)
 private val Accent=Color(0xFF80B7FF)
 private data class Control(val title:String,val value:Float,val range:ClosedFloatingPointRange<Float>,val set:(Float)->Unit)
-private data class HistoryEntry(val id:Long,val title:String,val time:Long,val imageUri:String,val settingsJson:String)
+private data class HistoryEntry(val id:Long,val title:String,val time:Long,val imageUri:String,val settingsJson:String,val layersJson:String?=null)
 
 class MainActivity:ComponentActivity(){
  override fun onCreate(savedInstanceState:Bundle?){
@@ -168,12 +168,13 @@ class MainActivity:ComponentActivity(){
  }
 
  // Persist a snapshot after the user pauses editing; history survives app restarts.
- LaunchedEffect(sourceUri,settings){
+ LaunchedEffect(sourceUri,settings,layers){
   if(sourceUri.isNotBlank()){
    delay(650)
    val json=gson.toJson(settings)
-   if(history.lastOrNull()?.let{it.imageUri==sourceUri&&it.settingsJson==json}!=true){
-    val entry=HistoryEntry(System.currentTimeMillis(),"編輯版本 ${history.size+1}",System.currentTimeMillis(),sourceUri,json)
+   val layerJson=gson.toJson(layers)
+   if(history.lastOrNull()?.let{it.imageUri==sourceUri&&it.settingsJson==json&&it.layersJson==layerJson}!=true){
+    val entry=HistoryEntry(System.currentTimeMillis(),"編輯版本 ${history.size+1}",System.currentTimeMillis(),sourceUri,json,layerJson)
     history=(history+entry).takeLast(80)
     prefs.edit().putString("entries",gson.toJson(history)).apply()
    }
@@ -445,7 +446,12 @@ class MainActivity:ComponentActivity(){
          val uri=Uri.parse(entry.imageUri)
          val loaded=withContext(Dispatchers.IO){decode(context,uri)}
          val restored=runCatching{gson.fromJson(entry.settingsJson,ProfessionalSettings::class.java)}.getOrDefault(ProfessionalSettings())
-         source=loaded;brushBaseMask=null;brushPoints=emptyList();activeMask=null;sourceUri=entry.imageUri;settings=restored;layers=listOf(LayerNode("layer-1","調整圖層 1",LayerKind.ADJUSTMENT,adjustments=restored));selectedLayerId="layer-1"
+         val restoredLayers=runCatching{
+          gson.fromJson<List<LayerNode>>(entry.layersJson,object:TypeToken<List<LayerNode>>(){}.type)?:emptyList()
+         }.getOrDefault(emptyList()).ifEmpty{listOf(LayerNode("layer-1","調整圖層 1",LayerKind.ADJUSTMENT,adjustments=restored))}
+         val selected=restoredLayers.lastOrNull()
+         source=loaded;brushBaseMask=null;brushPoints=emptyList();activeMask=null;sourceUri=entry.imageUri
+         settings=selected?.adjustments?:restored;layers=restoredLayers;selectedLayerId=selected?.id?:"layer-1"
          note=if(loaded==null)"歷史照片無法重新讀取，請確認原照片仍存在" else "已載入歷史版本，可繼續編輯"
          busy=false
         }
