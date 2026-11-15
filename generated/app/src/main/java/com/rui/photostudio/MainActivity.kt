@@ -109,6 +109,7 @@ class MainActivity:ComponentActivity(){
     val savedUri=withContext(Dispatchers.IO){copyToHistoryStorage(context,uri)}
     val loaded=if(savedUri!=null)withContext(Dispatchers.IO){decode(context,savedUri)}else null
     source=loaded
+    brushBaseMask=null;brushPoints=emptyList();activeMask=null
     sourceUri=savedUri?.toString().orEmpty()
     settings=ProfessionalSettings()
     layers=listOf(LayerNode("layer-1","調整圖層 1",LayerKind.ADJUSTMENT,adjustments=ProfessionalSettings()))
@@ -429,7 +430,7 @@ class MainActivity:ComponentActivity(){
          val uri=Uri.parse(entry.imageUri)
          val loaded=withContext(Dispatchers.IO){decode(context,uri)}
          val restored=runCatching{gson.fromJson(entry.settingsJson,ProfessionalSettings::class.java)}.getOrDefault(ProfessionalSettings())
-         source=loaded;sourceUri=entry.imageUri;settings=restored
+         source=loaded;brushBaseMask=null;brushPoints=emptyList();activeMask=null;sourceUri=entry.imageUri;settings=restored
          note=if(loaded==null)"歷史照片無法重新讀取，請確認原照片仍存在" else "已載入歷史版本，可繼續編輯"
          busy=false
         }
