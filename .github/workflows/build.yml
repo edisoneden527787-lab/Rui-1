@@ -83,18 +83,18 @@ jobs:
             echo "使用專案自帶的 Gradle Wrapper。"
           else
             echo "mode=system" >> "$GITHUB_OUTPUT"
-            echo "專案沒有完整的 Gradle Wrapper，改用 Gradle 8.7。"
+            echo "專案沒有完整的 Gradle Wrapper，改用 Gradle 8.11.1。"
           fi
 
-      - name: 安裝 Gradle 8.7
+      - name: 安裝 Gradle 8.11.1
         if: steps.gradle_mode.outputs.mode == 'system'
         run: |
           set -euo pipefail
-          wget -q -O /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
-          sudo rm -rf /opt/gradle-8.7
+          wget -q -O /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.11.1-bin.zip
+          sudo rm -rf /opt/gradle-8.11.1
           sudo unzip -q /tmp/gradle.zip -d /opt
-          sudo chown -R "$USER:$USER" /opt/gradle-8.7
-          echo "/opt/gradle-8.7/bin" >> "$GITHUB_PATH"
+          sudo chown -R "$USER:$USER" /opt/gradle-8.11.1
+          echo "/opt/gradle-8.11.1/bin" >> "$GITHUB_PATH"
 
       - name: 編譯 Debug APK
         working-directory: generated
