@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -75,6 +76,7 @@ class MainActivity:ComponentActivity(){
  var bandIndex by remember{mutableIntStateOf(0)}
  var curveChannel by remember{mutableStateOf("Master")}
  var showHistory by remember{mutableStateOf(false)}
+ var showFullscreen by remember{mutableStateOf(false)}
  var history by remember{mutableStateOf(runCatching{
   val raw=prefs.getString("entries","[]")?: "[]"
   gson.fromJson<List<HistoryEntry>>(raw,object:TypeToken<List<HistoryEntry>>(){}.type)?: emptyList()
@@ -180,12 +182,12 @@ class MainActivity:ComponentActivity(){
     OutlinedButton(onClick={settings=ProfessionalSettings()}){Text("重設")}
     Button(enabled=source!=null&&!busy,onClick={
      val img=source
-     if(img!=null){busy=true;scope.launch{val ok=withContext(Dispatchers.IO){val out=if(local)ProfessionalEngine.apply(img,settings,RadialMask(.5f,.5f,.42f,.42f))else ProfessionalEngine.apply(img,settings);save(context,out)};note=if(ok)"匯出完成"else"匯出失敗";busy=false}}
+     if(img!=null){busy=true;scope.launch{val ok=withContext(Dispatchers.IO){val out=if(local)ProfessionalEngine.apply(img,settings,RadialMask(.5f,.5f,.42f,.42f))else ProfessionalEngine.apply(img,settings);save(context,out)};note=if(ok)"匯出完成"else"匯出失敗";Toast.makeText(context,if(ok)"已成功匯出至相簿：Rui Photo Studio" else "匯出失敗，請檢查儲存空間後重試",Toast.LENGTH_LONG).show();busy=false}}
     }){Text("匯出")}
    }
    Box(Modifier.weight(1f).fillMaxWidth().padding(top=8.dp).background(Color(0xFF111317),RoundedCornerShape(16.dp)),contentAlignment=Alignment.Center){
     val img=preview
-    if(img==null)Text("從相簿選擇照片",color=Color.White)else Image(img.asImageBitmap(),null,Modifier.fillMaxSize().padding(5.dp),contentScale=ContentScale.Fit)
+    if(img==null)Text("從相簿選擇照片",color=Color.White)else Image(img.asImageBitmap(),null,Modifier.fillMaxSize().padding(5.dp).pointerInput(Unit){androidx.compose.foundation.gestures.detectTapGestures(onTap={showFullscreen=true})},contentScale=ContentScale.Fit)
     if(busy)CircularProgressIndicator(color=Accent)
    }
    Text(note,color=Color.LightGray,fontSize=11.sp,modifier=Modifier.padding(vertical=5.dp))
@@ -219,6 +221,14 @@ class MainActivity:ComponentActivity(){
      Row(verticalAlignment=Alignment.CenterVertically){Text(c.title,color=Color.White,fontSize=12.sp,modifier=Modifier.weight(1f));Text("%.2f".format(c.value),color=Color.LightGray,fontSize=11.sp)}
      Slider(value=c.value.coerceIn(c.range.start,c.range.endInclusive),onValueChange=c.set,valueRange=c.range)
     }}
+   }
+  }
+  if(showFullscreen){
+   androidx.compose.ui.window.Dialog(onDismissRequest={showFullscreen=false},properties=androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth=false)){
+    Box(Modifier.fillMaxSize().background(Color.Black).pointerInput(Unit){androidx.compose.foundation.gestures.detectTapGestures(onTap={showFullscreen=false})},contentAlignment=Alignment.Center){
+     preview?.let{Image(it.asImageBitmap(),null,Modifier.fillMaxSize(),contentScale=ContentScale.Fit)}
+     Text("點擊照片返回編輯",color=Color.White,modifier=Modifier.align(Alignment.BottomCenter).padding(20.dp))
+    }
    }
   }
   if(showHistory){
@@ -263,7 +273,7 @@ class MainActivity:ComponentActivity(){
   detectDragGestures(
    onDragStart={p->
     working=currentPoints.toList()
-    val w=size.width.coerceAtLeast(1f);val h=size.height.coerceAtLeast(1f)
+    val w=size.width.toFloat().coerceAtLeast(1f);val h=size.height.toFloat().coerceAtLeast(1f)
     val px=p.x/w;val py=1f-p.y/h
     val nearest=working.indices.minByOrNull{i->
      val dx=(working[i].x-px)*w;val dy=(working[i].y-py)*h
