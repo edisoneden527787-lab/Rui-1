@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -335,7 +336,7 @@ class MainActivity:ComponentActivity(){
    onDrag={event,_->
     event.consume()
     if(selected>=0&&selected<working.size){
-     val w=size.width.coerceAtLeast(1f);val h=size.height.coerceAtLeast(1f)
+     val w=size.width.toFloat().coerceAtLeast(1f);val h=size.height.toFloat().coerceAtLeast(1f)
      val old=working[selected]
      val minX=if(selected==0)0f else working[selected-1].x+.005f
      val maxX=if(selected==working.lastIndex)1f else working[selected+1].x-.005f
