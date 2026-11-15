@@ -28,6 +28,16 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: 解壓 Rui Photo Studio 專案
+        run: |
+          set -euo pipefail
+          if [ -f generated/RuiPhotoStudio-source.zip.b64 ]; then
+            base64 -d generated/RuiPhotoStudio-source.zip.b64 > /tmp/RuiPhotoStudio-source.zip
+            unzip -q /tmp/RuiPhotoStudio-source.zip -d /tmp/rui-project
+            cp -a /tmp/rui-project/RuiPhotoStudio/. generated/
+            rm -f generated/RuiPhotoStudio-source.zip.b64
+          fi
+
       - name: 確認產生的專案存在
         run: |
           set -euo pipefail
@@ -57,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
           echo "sdk.dir=$ANDROID_HOME" > generated/local.properties
           echo "Java: $(java -version 2>&1 | head -n 1)"
           echo "sdkmanager: $(sdkmanager --version)"
