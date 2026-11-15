@@ -32,7 +32,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -219,7 +219,7 @@ class MainActivity:ComponentActivity(){
    }
    Box(Modifier.weight(1f).fillMaxWidth().padding(top=8.dp).background(Color(0xFF111317),RoundedCornerShape(16.dp)),contentAlignment=Alignment.Center){
     val img=preview
-    if(img==null)Text("從相簿選擇照片",color=Color.White)else Image(img.asImageBitmap(),null,Modifier.fillMaxSize().padding(5.dp).pointerInput(Unit){androidx.compose.foundation.gestures.detectTapGestures(onTap={showFullscreen=true})},contentScale=ContentScale.Fit)
+    if(img==null)Text("從相簿選擇照片",color=Color.White)else Image(img.asImageBitmap(),null,Modifier.fillMaxSize().padding(5.dp).pointerInput(Unit){detectTapGestures(onTap={showFullscreen=true})},contentScale=ContentScale.Fit)
     if(busy)CircularProgressIndicator(color=Accent)
    }
    Text(note,color=Color.LightGray,fontSize=11.sp,modifier=Modifier.padding(vertical=5.dp))
