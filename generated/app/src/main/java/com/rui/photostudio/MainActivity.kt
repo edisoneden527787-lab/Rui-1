@@ -78,6 +78,12 @@ class MainActivity:ComponentActivity(){
  var historyAction by remember{mutableStateOf(false)}
  var tab by remember{mutableStateOf("基本")}
  var local by remember{mutableStateOf(false)}
+ var maskKind by remember{mutableStateOf("圓形")}
+ var maskInverted by remember{mutableStateOf(false)}
+ var maskFeather by remember{mutableFloatStateOf(18f)}
+ var showMaskOverlay by remember{mutableStateOf(true)}
+ var maskRevision by remember{mutableIntStateOf(0)}
+ var activeMask by remember{mutableStateOf<PixelMask?>(null)}
  var busy by remember{mutableStateOf(false)}
  var note by remember{mutableStateOf("從相簿選擇照片開始編輯")}
  var bandIndex by remember{mutableIntStateOf(0)}
@@ -104,14 +110,30 @@ class MainActivity:ComponentActivity(){
   }
  }
 
- LaunchedEffect(source,settings,local){
+ LaunchedEffect(source,settings,local,maskKind,maskInverted,maskFeather,maskRevision){
   val img=source
-  if(img==null){preview=null;return@LaunchedEffect}
+  if(img==null){preview=null;activeMask=null;return@LaunchedEffect}
   busy=true
   val result=withContext(Dispatchers.Default){
    val scale=minOf(1f,1100f/max(img.width,img.height))
    val small=if(scale<1f)Bitmap.createScaledBitmap(img,(img.width*scale).toInt().coerceAtLeast(1),(img.height*scale).toInt().coerceAtLeast(1),true)else img
-   if(local)ProfessionalEngine.apply(small,settings,RadialMask(.5f,.5f,.42f,.42f))else ProfessionalEngine.apply(small,settings)
+   if(local){
+    var generated=if(maskKind=="線性")PixelMask.linearGradient(small.width,small.height,.08f,.5f,.92f,.5f)
+      else PixelMask.radialGradient(small.width,small.height,.5f,.5f,.43f,.43f,.38f)
+    if(maskInverted)generated=generated.inverted()
+    if(maskFeather>0f)generated=generated.feather(maskFeather*scale)
+    activeMask=generated
+    LayerEngine.render(small,listOf(LayerNode(
+      id="local-adjustment",name="局部調整",kind=LayerKind.ADJUSTMENT,
+      adjustments=settings,mask=generated
+    )))
+   }else{
+    activeMask=null
+    LayerEngine.render(small,listOf(LayerNode(
+      id="global-adjustment",name="全域調整",kind=LayerKind.ADJUSTMENT,
+      adjustments=settings
+    )))
+   }
   }
   preview=result
   busy=false
@@ -214,16 +236,47 @@ class MainActivity:ComponentActivity(){
     OutlinedButton(onClick={settings=ProfessionalSettings()}){Text("還原全部")}
     Button(enabled=source!=null&&!busy,onClick={
      val img=source
-     if(img!=null){busy=true;scope.launch{val ok=withContext(Dispatchers.IO){val out=if(local)ProfessionalEngine.apply(img,settings,RadialMask(.5f,.5f,.42f,.42f))else ProfessionalEngine.apply(img,settings);save(context,out)};note=if(ok)"匯出完成"else"匯出失敗";Toast.makeText(context,if(ok)"已成功匯出至相簿：Rui Photo Studio" else "匯出失敗，請檢查儲存空間後重試",Toast.LENGTH_LONG).show();busy=false}}
+     if(img!=null){busy=true;scope.launch{val ok=withContext(Dispatchers.IO){val out=if(local){
+      var mask=if(maskKind=="線性")PixelMask.linearGradient(img.width,img.height,.08f,.5f,.92f,.5f)
+       else PixelMask.radialGradient(img.width,img.height,.5f,.5f,.43f,.43f,.38f)
+      if(maskInverted)mask=mask.inverted()
+      if(maskFeather>0f)mask=mask.feather(maskFeather)
+      LayerEngine.render(img,listOf(LayerNode(id="export-adjustment",name="局部調整",kind=LayerKind.ADJUSTMENT,adjustments=settings,mask=mask)))
+     }else LayerEngine.render(img,listOf(LayerNode(id="export-adjustment",name="全域調整",kind=LayerKind.ADJUSTMENT,adjustments=settings)))
+     save(context,out)};note=if(ok)"匯出完成"else"匯出失敗";Toast.makeText(context,if(ok)"已成功匯出至相簿：Rui Photo Studio" else "匯出失敗，請檢查儲存空間後重試",Toast.LENGTH_LONG).show();busy=false}}
     }){Text("匯出")}
    }
    Box(Modifier.weight(1f).fillMaxWidth().padding(top=8.dp).background(Color(0xFF111317),RoundedCornerShape(16.dp)),contentAlignment=Alignment.Center){
     val img=preview
-    if(img==null)Text("從相簿選擇照片",color=Color.White)else Image(img.asImageBitmap(),null,Modifier.fillMaxSize().padding(5.dp).pointerInput(Unit){detectTapGestures(onTap={showFullscreen=true})},contentScale=ContentScale.Fit)
+    if(img==null)Text("從相簿選擇照片",color=Color.White)else {
+     Image(img.asImageBitmap(),null,Modifier.fillMaxSize().padding(5.dp).pointerInput(Unit){detectTapGestures(onTap={showFullscreen=true})},contentScale=ContentScale.Fit)
+     if(local&&showMaskOverlay)activeMask?.let{mask->Image(mask.toOverlayBitmap().asImageBitmap(),null,Modifier.fillMaxSize().padding(5.dp),contentScale=ContentScale.Fit)}
+    }
     if(busy)CircularProgressIndicator(color=Accent)
    }
    Text(note,color=Color.LightGray,fontSize=11.sp,modifier=Modifier.padding(vertical=5.dp))
    Row(verticalAlignment=Alignment.CenterVertically){Text("全域",color=if(!local)Accent else Color.LightGray);Switch(checked=local,onCheckedChange={local=it});Text("局部遮罩",color=if(local)Accent else Color.LightGray)}
+   if(local){
+    Column(Modifier.fillMaxWidth().background(Color(0xFF15181D),RoundedCornerShape(12.dp)).padding(10.dp)){
+     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)){
+      Text("遮罩形狀",color=Color.White,fontSize=12.sp)
+      FilterChip(selected=maskKind=="圓形",onClick={maskKind="圓形";maskRevision++},label={Text("徑向")})
+      FilterChip(selected=maskKind=="線性",onClick={maskKind="線性";maskRevision++},label={Text("線性")})
+      Spacer(Modifier.weight(1f))
+      TextButton(onClick={maskInverted=!maskInverted;maskRevision++}){Text(if(maskInverted)"已反轉" else "反轉")}
+     }
+     Row(verticalAlignment=Alignment.CenterVertically){
+      Text("羽化",color=Color.White,fontSize=11.sp,modifier=Modifier.width(52.dp))
+      Slider(value=maskFeather,onValueChange={maskFeather=it;maskRevision++},valueRange=0f..80f,modifier=Modifier.weight(1f))
+      Text(maskFeather.toInt().toString(),color=Color.LightGray,fontSize=11.sp)
+     }
+     Row(verticalAlignment=Alignment.CenterVertically){
+      Text("顯示紅色遮罩",color=Color.LightGray,fontSize=11.sp,modifier=Modifier.weight(1f))
+      Switch(checked=showMaskOverlay,onCheckedChange={showMaskOverlay=it})
+     }
+     Text("目前提供徑向／線性像素遮罩、反轉與羽化；筆刷與 AI 選取尚未接入。",color=Color(0xFFB7C0CC),fontSize=10.sp)
+    }
+   }
    Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("基本","色彩","細節").forEach{FilterChip(selected=tab==it,onClick={tab=it},label={Text(it)})}}
    if(tab=="色彩")Row(horizontalArrangement=Arrangement.spacedBy(2.dp)){listOf("紅","黃","綠","青","藍","洋紅").forEachIndexed{i,n->FilterChip(selected=bandIndex==i,onClick={bandIndex=i},label={Text(n)})}}
    if(tab=="色彩"){
