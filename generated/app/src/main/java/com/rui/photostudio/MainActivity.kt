@@ -83,6 +83,9 @@ class MainActivity:ComponentActivity(){
  var maskFeather by remember{mutableFloatStateOf(18f)}
  var showMaskOverlay by remember{mutableStateOf(true)}
  var maskRevision by remember{mutableIntStateOf(0)}
+ var brushPoints by remember{mutableStateOf(listOf<BrushPoint>())}
+ var brushDiameter by remember{mutableFloatStateOf(90f)}
+ var brushErase by remember{mutableStateOf(false)}
  var activeMask by remember{mutableStateOf<PixelMask?>(null)}
  var busy by remember{mutableStateOf(false)}
  var note by remember{mutableStateOf("從相簿選擇照片開始編輯")}
@@ -110,7 +113,7 @@ class MainActivity:ComponentActivity(){
   }
  }
 
- LaunchedEffect(source,settings,local,maskKind,maskInverted,maskFeather,maskRevision){
+ LaunchedEffect(source,settings,local,maskKind,maskInverted,maskFeather,maskRevision,brushPoints,brushDiameter,brushErase){
   val img=source
   if(img==null){preview=null;activeMask=null;return@LaunchedEffect}
   busy=true
@@ -118,8 +121,11 @@ class MainActivity:ComponentActivity(){
    val scale=minOf(1f,1100f/max(img.width,img.height))
    val small=if(scale<1f)Bitmap.createScaledBitmap(img,(img.width*scale).toInt().coerceAtLeast(1),(img.height*scale).toInt().coerceAtLeast(1),true)else img
    if(local){
-    var generated=if(maskKind=="線性")PixelMask.linearGradient(small.width,small.height,.08f,.5f,.92f,.5f)
-      else PixelMask.radialGradient(small.width,small.height,.5f,.5f,.43f,.43f,.38f)
+    var generated=when(maskKind){
+      "線性"->PixelMask.linearGradient(small.width,small.height,.08f,.5f,.92f,.5f)
+      "筆刷"->PixelMask.brush(small.width,small.height,brushPoints,brushDiameter*scale,0.78f,!brushErase)
+      else->PixelMask.radialGradient(small.width,small.height,.5f,.5f,.43f,.43f,.38f)
+    }
     if(maskInverted)generated=generated.inverted()
     if(maskFeather>0f)generated=generated.feather(maskFeather*scale)
     activeMask=generated
@@ -246,7 +252,22 @@ class MainActivity:ComponentActivity(){
      save(context,out)};note=if(ok)"匯出完成"else"匯出失敗";Toast.makeText(context,if(ok)"已成功匯出至相簿：Rui Photo Studio" else "匯出失敗，請檢查儲存空間後重試",Toast.LENGTH_LONG).show();busy=false}}
     }){Text("匯出")}
    }
-   Box(Modifier.weight(1f).fillMaxWidth().padding(top=8.dp).background(Color(0xFF111317),RoundedCornerShape(16.dp)),contentAlignment=Alignment.Center){
+   Box(Modifier.weight(1f).fillMaxWidth().padding(top=8.dp).background(Color(0xFF111317),RoundedCornerShape(16.dp))
+    .pointerInput(maskKind,preview){
+     val image=preview
+     if(image!=null&&maskKind=="筆刷"){
+      fun mapPoint(p:Offset):BrushPoint{
+       val scale=minOf(size.width.toFloat()/image.width,size.height.toFloat()/image.height)
+       val shownW=image.width*scale;val shownH=image.height*scale
+       val left=(size.width-shownW)/2f;val top=(size.height-shownH)/2f
+       return BrushPoint(((p.x-left)/scale).coerceIn(0f,image.width-1f),((p.y-top)/scale).coerceIn(0f,image.height-1f))
+      }
+      detectDragGestures(
+       onDragStart={p->brushPoints=brushPoints+mapPoint(p);maskRevision++},
+       onDrag={change,_->change.consume();brushPoints=brushPoints+mapPoint(change.position);maskRevision++}
+      )
+     }
+    },contentAlignment=Alignment.Center){
     val img=preview
     if(img==null)Text("從相簿選擇照片",color=Color.White)else {
      Image(img.asImageBitmap(),null,Modifier.fillMaxSize().padding(5.dp).pointerInput(Unit){detectTapGestures(onTap={showFullscreen=true})},contentScale=ContentScale.Fit)
@@ -262,6 +283,7 @@ class MainActivity:ComponentActivity(){
       Text("遮罩形狀",color=Color.White,fontSize=12.sp)
       FilterChip(selected=maskKind=="圓形",onClick={maskKind="圓形";maskRevision++},label={Text("徑向")})
       FilterChip(selected=maskKind=="線性",onClick={maskKind="線性";maskRevision++},label={Text("線性")})
+      FilterChip(selected=maskKind=="筆刷",onClick={maskKind="筆刷";brushPoints=emptyList();maskRevision++},label={Text("筆刷")})
       Spacer(Modifier.weight(1f))
       TextButton(onClick={maskInverted=!maskInverted;maskRevision++}){Text(if(maskInverted)"已反轉" else "反轉")}
      }
@@ -270,11 +292,24 @@ class MainActivity:ComponentActivity(){
       Slider(value=maskFeather,onValueChange={maskFeather=it;maskRevision++},valueRange=0f..80f,modifier=Modifier.weight(1f))
       Text(maskFeather.toInt().toString(),color=Color.LightGray,fontSize=11.sp)
      }
+     if(maskKind=="筆刷"){
+      Row(verticalAlignment=Alignment.CenterVertically){
+       Text("筆刷大小",color=Color.White,fontSize=11.sp,modifier=Modifier.width(62.dp))
+       Slider(value=brushDiameter,onValueChange={brushDiameter=it;maskRevision++},valueRange=12f..360f,modifier=Modifier.weight(1f))
+       Text(brushDiameter.toInt().toString(),color=Color.LightGray,fontSize=11.sp)
+      }
+      Row(verticalAlignment=Alignment.CenterVertically){
+       Text("筆刷模式",color=Color.White,fontSize=11.sp,modifier=Modifier.weight(1f))
+       FilterChip(selected=!brushErase,onClick={brushErase=false;maskRevision++},label={Text("加入")})
+       FilterChip(selected=brushErase,onClick={brushErase=true;maskRevision++},label={Text("擦除")})
+       TextButton(onClick={brushPoints=emptyList();maskRevision++}){Text("清除筆畫")}
+      }
+     }
      Row(verticalAlignment=Alignment.CenterVertically){
       Text("顯示紅色遮罩",color=Color.LightGray,fontSize=11.sp,modifier=Modifier.weight(1f))
       Switch(checked=showMaskOverlay,onCheckedChange={showMaskOverlay=it})
      }
-     Text("目前提供徑向／線性像素遮罩、反轉與羽化；筆刷與 AI 選取尚未接入。",color=Color(0xFFB7C0CC),fontSize=10.sp)
+     Text("筆刷可直接在照片上塗抹；支援加入／擦除、大小、反轉與羽化。AI 物件選取尚未接入。",color=Color(0xFFB7C0CC),fontSize=10.sp)
     }
    }
    Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){listOf("基本","色彩","細節").forEach{FilterChip(selected=tab==it,onClick={tab=it},label={Text(it)})}}
