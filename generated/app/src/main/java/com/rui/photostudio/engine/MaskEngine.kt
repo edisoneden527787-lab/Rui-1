@@ -30,6 +30,17 @@ class PixelMask private constructor(
 
     fun copy(): PixelMask = PixelMask(width, height, coverage.copyOf())
 
+    fun resized(newWidth: Int, newHeight: Int): PixelMask {
+        require(newWidth > 0 && newHeight > 0)
+        return create(newWidth, newHeight) { i ->
+            val x = i % newWidth
+            val y = i / newWidth
+            val sx = ((x + 0.5f) / newWidth * width).toInt().coerceIn(0, width - 1)
+            val sy = ((y + 0.5f) / newHeight * height).toInt().coerceIn(0, height - 1)
+            valueAt(sx, sy)
+        }
+    }
+
     fun combine(other: PixelMask, operation: MaskOperation): PixelMask {
         require(width == other.width && height == other.height) {
             "Masks must have identical dimensions"
@@ -128,9 +139,11 @@ class PixelMask private constructor(
             points: List<BrushPoint>,
             diameter: Float,
             hardness: Float = 0.8f,
-            add: Boolean = true
+            add: Boolean = true,
+            initial: PixelMask? = null
         ): PixelMask {
-            val result = FloatArray(width * height)
+            require(initial == null || (initial.width == width && initial.height == height))
+            val result = initial?.coverage?.copyOf() ?: FloatArray(width * height)
             val radius = diameter.coerceAtLeast(1f) / 2f
             val hard = hardness.coerceIn(0f, 1f)
             if (points.isEmpty()) return PixelMask(width, height, result)
