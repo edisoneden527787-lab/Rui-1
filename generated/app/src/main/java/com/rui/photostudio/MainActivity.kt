@@ -129,11 +129,11 @@ class MainActivity:ComponentActivity(){
    if(local){
     var generated=when(maskKind){
       "線性"->PixelMask.linearGradient(small.width,small.height,.08f,.5f,.92f,.5f)
-      "筆刷"->PixelMask.brush(small.width,small.height,brushPoints,brushDiameter*scale,0.78f,!brushErase,brushBaseMask?.takeIf{it.width==small.width&&it.height==small.height}?:PixelMask.empty(small.width,small.height))
+      "筆刷"->PixelMask.brush(small.width,small.height,brushPoints,brushDiameter,0.78f,!brushErase,brushBaseMask?.takeIf{it.width==small.width&&it.height==small.height}?:PixelMask.empty(small.width,small.height))
       else->PixelMask.radialGradient(small.width,small.height,.5f,.5f,.43f,.43f,.38f)
     }
     if(maskInverted)generated=generated.inverted()
-    if(maskFeather>0f)generated=generated.feather(maskFeather*scale)
+    if(maskFeather>0f)generated=generated.feather(maskFeather)
     activeMask=generated
     val renderLayers=layers.map{if(it.id==selectedLayerId)it.copy(adjustments=settings,mask=generated)else it}
     LayerEngine.render(small,renderLayers)
