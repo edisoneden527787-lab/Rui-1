@@ -128,7 +128,7 @@ class MainActivity:ComponentActivity(){
    if(local){
     var generated=when(maskKind){
       "線性"->PixelMask.linearGradient(small.width,small.height,.08f,.5f,.92f,.5f)
-      "筆刷"->PixelMask.brush(small.width,small.height,brushPoints,brushDiameter*scale,0.78f,!brushErase)
+      "筆刷"->PixelMask.brush(small.width,small.height,brushPoints,brushDiameter*scale,0.78f,!brushErase,activeMask?.takeIf{it.width==small.width&&it.height==small.height})
       else->PixelMask.radialGradient(small.width,small.height,.5f,.5f,.43f,.43f,.38f)
     }
     if(maskInverted)generated=generated.inverted()
@@ -249,10 +249,13 @@ class MainActivity:ComponentActivity(){
     Button(enabled=source!=null&&!busy,onClick={
      val img=source
      if(img!=null){busy=true;scope.launch{val ok=withContext(Dispatchers.IO){val out=if(local){
-      var mask=if(maskKind=="線性")PixelMask.linearGradient(img.width,img.height,.08f,.5f,.92f,.5f)
-       else PixelMask.radialGradient(img.width,img.height,.5f,.5f,.43f,.43f,.38f)
-      if(maskInverted)mask=mask.inverted()
-      if(maskFeather>0f)mask=mask.feather(maskFeather)
+      var mask=when(maskKind){
+       "線性"->PixelMask.linearGradient(img.width,img.height,.08f,.5f,.92f,.5f)
+       "筆刷"->activeMask?.resized(img.width,img.height)?:PixelMask.empty(img.width,img.height)
+       else->PixelMask.radialGradient(img.width,img.height,.5f,.5f,.43f,.43f,.38f)
+      }
+      if(maskKind!="筆刷"&&maskInverted)mask=mask.inverted()
+      if(maskKind!="筆刷"&&maskFeather>0f)mask=mask.feather(maskFeather)
       LayerEngine.render(img,layers.map{if(it.id==selectedLayerId)it.copy(adjustments=settings,mask=mask)else it})
      }else LayerEngine.render(img,layers.map{if(it.id==selectedLayerId)it.copy(adjustments=settings,mask=null)else it})
      save(context,out)};note=if(ok)"匯出完成"else"匯出失敗";Toast.makeText(context,if(ok)"已成功匯出至相簿：Rui Photo Studio" else "匯出失敗，請檢查儲存空間後重試",Toast.LENGTH_LONG).show();busy=false}}
@@ -289,7 +292,7 @@ class MainActivity:ComponentActivity(){
       Text("遮罩形狀",color=Color.White,fontSize=12.sp)
       FilterChip(selected=maskKind=="圓形",onClick={maskKind="圓形";maskRevision++},label={Text("徑向")})
       FilterChip(selected=maskKind=="線性",onClick={maskKind="線性";maskRevision++},label={Text("線性")})
-      FilterChip(selected=maskKind=="筆刷",onClick={maskKind="筆刷";brushPoints=emptyList();maskRevision++},label={Text("筆刷")})
+      FilterChip(selected=maskKind=="筆刷",onClick={maskKind="筆刷";brushPoints=emptyList();activeMask=null;maskRevision++},label={Text("筆刷")})
       Spacer(Modifier.weight(1f))
       TextButton(onClick={maskInverted=!maskInverted;maskRevision++}){Text(if(maskInverted)"已反轉" else "反轉")}
      }
