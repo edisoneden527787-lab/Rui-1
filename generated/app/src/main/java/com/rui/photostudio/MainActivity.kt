@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -366,6 +368,13 @@ class MainActivity:ComponentActivity(){
        val fresh=LayerNode(id,"調整圖層 ${layers.size+1}",LayerKind.ADJUSTMENT,adjustments=ProfessionalSettings())
        layers=layers+fresh;selectedLayerId=id;settings=ProfessionalSettings()
       }){Text("＋ 新增")}
+      val selectedIndex=layers.indexOfFirst{it.id==selectedLayerId}
+      TextButton(enabled=selectedIndex>0,onClick={
+       val copy=layers.toMutableList();val item=copy.removeAt(selectedIndex);copy.add(selectedIndex-1,item);layers=copy
+      }){Text("上移")}
+      TextButton(enabled=selectedIndex>=0&&selectedIndex<layers.lastIndex,onClick={
+       val copy=layers.toMutableList();val item=copy.removeAt(selectedIndex);copy.add(selectedIndex+1,item);layers=copy
+      }){Text("下移")}
       TextButton(enabled=layers.size>1,onClick={
        layers=layers.filterNot{it.id==selectedLayerId}
        val next=layers.last();selectedLayerId=next.id;settings=next.adjustments?:ProfessionalSettings()
@@ -383,8 +392,14 @@ class MainActivity:ComponentActivity(){
         Slider(value=layer.opacity,onValueChange={v->layers=layers.map{if(it.id==layer.id)it.copy(opacity=v)else it}},valueRange=0f..1f,modifier=Modifier.weight(1f))
         Text("${(layer.opacity*100).toInt()}%",color=Color.White,fontSize=10.sp)
        }
-       Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){
-        listOf("正常" to LayerBlendMode.NORMAL,"色彩增值" to LayerBlendMode.MULTIPLY,"濾色" to LayerBlendMode.SCREEN,"覆蓋" to LayerBlendMode.OVERLAY).forEach{(label,mode)->
+       Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(4.dp)){
+        listOf(
+         "正常" to LayerBlendMode.NORMAL,"色彩增值" to LayerBlendMode.MULTIPLY,
+         "濾色" to LayerBlendMode.SCREEN,"覆蓋" to LayerBlendMode.OVERLAY,
+         "柔光" to LayerBlendMode.SOFT_LIGHT,"強光" to LayerBlendMode.HARD_LIGHT,
+         "變暗" to LayerBlendMode.DARKEN,"變亮" to LayerBlendMode.LIGHTEN,
+         "色彩" to LayerBlendMode.COLOR,"明度" to LayerBlendMode.LUMINOSITY
+        ).forEach{(label,mode)->
          FilterChip(selected=layer.blendMode==mode,onClick={layers=layers.map{if(it.id==layer.id)it.copy(blendMode=mode)else it}},label={Text(label,fontSize=10.sp)})
         }
        }
