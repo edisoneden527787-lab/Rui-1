@@ -287,8 +287,8 @@ class MainActivity:ComponentActivity(){
      val old=working[selected]
      val minX=if(selected==0)0f else working[selected-1].x+.005f
      val maxX=if(selected==working.lastIndex)1f else working[selected+1].x-.005f
-     val nx=if(selected==0)0f else if(selected==working.lastIndex)1f else (old.x+event.positionChange().x/w).coerceIn(minX,maxX)
-     val ny=(old.y-event.positionChange().y/h).coerceIn(0f,1f)
+     val nx=if(selected==0)0f else if(selected==working.lastIndex)1f else (old.x+(event.position.x-event.previousPosition.x)/w).coerceIn(minX,maxX)
+     val ny=(old.y-(event.position.y-event.previousPosition.y)/h).coerceIn(0f,1f)
      working=working.toMutableList().also{it[selected]=CurvePoint(nx,ny)}
      change(working)
     }
