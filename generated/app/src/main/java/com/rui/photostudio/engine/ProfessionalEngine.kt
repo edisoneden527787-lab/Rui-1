@@ -185,7 +185,8 @@ object ProfessionalEngine {
     fun applyLocalAdjustments(source: Bitmap, adjustments: List<LocalAdjustment>): Bitmap {
         var current=source
         adjustments.filter { it.enabled && it.opacity>0f }.forEach { item ->
-            val changed=apply(current,item.settings,item.mask)
+            // Render at full strength, then blend the mask exactly once.
+            val changed=apply(current,item.settings,null)
             current=blendMasked(current,changed,item.mask,item.opacity)
         }
         return current
