@@ -369,11 +369,11 @@ class MainActivity:ComponentActivity(){
        layers=layers+fresh;selectedLayerId=id;settings=ProfessionalSettings()
       }){Text("＋ 新增")}
       val selectedIndex=layers.indexOfFirst{it.id==selectedLayerId}
-      TextButton(enabled=selectedIndex>0,onClick={
-       val copy=layers.toMutableList();val item=copy.removeAt(selectedIndex);copy.add(selectedIndex-1,item);layers=copy
-      }){Text("上移")}
       TextButton(enabled=selectedIndex>=0&&selectedIndex<layers.lastIndex,onClick={
        val copy=layers.toMutableList();val item=copy.removeAt(selectedIndex);copy.add(selectedIndex+1,item);layers=copy
+      }){Text("上移")}
+      TextButton(enabled=selectedIndex>0,onClick={
+       val copy=layers.toMutableList();val item=copy.removeAt(selectedIndex);copy.add(selectedIndex-1,item);layers=copy
       }){Text("下移")}
       TextButton(enabled=layers.size>1,onClick={
        layers=layers.filterNot{it.id==selectedLayerId}
