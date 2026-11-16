@@ -1,4 +1,6 @@
 import os, json, uuid, asyncio
+from datetime import datetime, timedelta, timezone
+import jwt
 from pathlib import Path
 import httpx
 from fastapi import FastAPI, HTTPException, Header, BackgroundTasks
@@ -15,6 +17,7 @@ OLLAMA_MODEL=os.getenv("OLLAMA_MODEL","qwen2.5-coder:7b")
 GOOGLE_CLIENT_ID=os.getenv("GOOGLE_CLIENT_ID","")
 WORKER_URL=os.getenv("WORKER_URL","http://worker:8010")
 WORKER_SECRET=os.getenv("WORKER_SECRET","change-this-worker-secret")
+SESSION_SECRET=os.getenv("SESSION_SECRET","")
 DATA=Path(os.getenv("JOB_DATA","/data/jobs")); DATA.mkdir(parents=True,exist_ok=True)
 
 class ChatRequest(BaseModel):
@@ -34,10 +37,23 @@ def verify_google(raw: str):
     except Exception as exc:
         raise HTTPException(401,"Google 登入憑證無效或已過期。") from exc
 
+def issue_session(claims: dict):
+    if not SESSION_SECRET:
+        raise HTTPException(503,"雲端 SESSION_SECRET 尚未設定。")
+    payload={"sub":claims.get("sub",""),"email":claims.get("email",""),"name":claims.get("name",""),"iss":"rui-api","typ":"rui_session","exp":datetime.now(timezone.utc)+timedelta(days=180)}
+    return jwt.encode(payload,SESSION_SECRET,algorithm="HS256")
+
 def require_user(auth: str | None):
     if not auth or not auth.lower().startswith("bearer "):
         raise HTTPException(401,"請先使用 Google 登入。")
-    return verify_google(auth.split(" ",1)[1].strip())
+    raw=auth.split(" ",1)[1].strip()
+    if SESSION_SECRET:
+        try:
+            claims=jwt.decode(raw,SESSION_SECRET,algorithms=["HS256"],issuer="rui-api")
+            if claims.get("typ")=="rui_session": return claims
+        except jwt.InvalidTokenError:
+            pass
+    return verify_google(raw)
 
 @app.get("/health")
 async def health():
@@ -46,7 +62,7 @@ async def health():
 @app.post("/api/auth/google")
 async def google_login(body: GoogleRequest):
     claims=verify_google(body.id_token)
-    return {"authenticated":True,"name":claims.get("name",""),"email":claims.get("email",""),"picture":claims.get("picture",""),"subject":claims.get("sub","")}
+    return {"authenticated":True,"session_token":issue_session(claims),"name":claims.get("name",""),"email":claims.get("email",""),"picture":claims.get("picture",""),"subject":claims.get("sub","")}
 
 @app.post("/api/chat")
 async def chat(body: ChatRequest):
