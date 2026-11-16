@@ -6,6 +6,9 @@ import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -63,11 +66,22 @@ fun RuiBuilderApp(){
  var projectFiles by remember{mutableStateOf<Map<String,String>>(emptyMap())}
  var jobId by remember{mutableStateOf("")}
  var projectName by remember{mutableStateOf("RuiGeneratedApp")}
+ var modelStatus by remember{mutableStateOf("目前使用雲端預設模型")}
  val messages= remember{mutableStateListOf(ChatLine("你好！我是 Rui AI APK Builder。免登入模式已啟用，描述你的 App，我會產生 Android 專案並交給雲端 Worker 編譯 APK。",false))}
  val scope= rememberCoroutineScope()
  fun saveHistory(pText:String,name:String,job:String,state:String){
   val entry=HistoryItem(System.currentTimeMillis(),pText,name,job,state,System.currentTimeMillis())
   history=(listOf(entry)+history).take(30);writeHistory(prefs,history)
+ }
+ val ggufPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->
+  if(uri!=null)scope.launch{
+   val name=queryDisplayName(context,uri)
+   if(!name.lowercase().endsWith(".gguf")){status="檔案格式錯誤：請選擇 .gguf";return@launch}
+   busy=true;status="正在上傳 GGUF 並匯入雲端 Ollama…"
+   try{val result=uploadGguf(context,endpoint,uri,name);modelStatus="目前模型："+result.optString("active");status="GGUF 匯入成功，已切換模型："+result.optString("name")}
+   catch(e:Exception){status="GGUF 匯入失敗："+(e.message?:"未知錯誤")}
+   busy=false
+  }
  }
 
  suspend fun generate(){
@@ -130,7 +144,12 @@ fun RuiBuilderApp(){
   }}){padding->
    Column(Modifier.fillMaxSize().padding(padding).padding(horizontal=14.dp)){
     Card(colors=CardDefaults.cardColors(containerColor=Panel),shape=RoundedCornerShape(16.dp)){
-     Column(Modifier.padding(12.dp)){Text("專案工作區",fontWeight=FontWeight.SemiBold);Text(if(projectFiles.isEmpty())"尚未生成專案" else "已載入 ${projectFiles.size} 個專案檔案",color=Muted,style=MaterialTheme.typography.bodySmall)}
+     Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
+      Text("專案工作區",fontWeight=FontWeight.SemiBold)
+      Text(if(projectFiles.isEmpty())"尚未生成專案" else "已載入 ${projectFiles.size} 個專案檔案",color=Muted,style=MaterialTheme.typography.bodySmall)
+      Text(modelStatus,color=Accent,style=MaterialTheme.typography.bodySmall)
+      OutlinedButton(onClick={ggufPicker.launch(arrayOf("*/*"))},enabled=!busy,modifier=Modifier.fillMaxWidth()){Text("選擇並上傳 .GGUF 模型到雲端")}
+     }
     }
     Spacer(Modifier.height(8.dp))
     LazyColumn(modifier=Modifier.weight(1f),contentPadding=PaddingValues(vertical=8.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
@@ -184,6 +203,42 @@ private suspend fun api(base:String,path:String,body:JSONObject?,token:String?):
  c.disconnect()
  if(code !in 200..299)throw IllegalStateException("HTTP $code: $text")
  JSONObject(text)
+}
+
+
+private fun queryDisplayName(context:Context,uri:Uri):String{
+ var name="model.gguf"
+ context.contentResolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use{cursor->
+  if(cursor.moveToFirst()){val i=cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);if(i>=0)name=cursor.getString(i)?:name}
+ }
+ return name
+}
+
+private suspend fun uploadGguf(context:Context,base:String,uri:Uri,filename:String):JSONObject=withContext(Dispatchers.IO){
+ val boundary="RuiGguf"+System.currentTimeMillis()
+ val connection=URL(base.trimEnd('/')+"/api/models/import").openConnection() as HttpURLConnection
+ connection.requestMethod="POST";connection.connectTimeout=30000;connection.readTimeout=1800000
+ connection.doOutput=true;connection.setChunkedStreamingMode(1024*1024)
+ connection.setRequestProperty("Accept","application/json")
+ connection.setRequestProperty("Content-Type","multipart/form-data; boundary=$boundary")
+ DataOutputStream(connection.outputStream).use{out->
+  out.writeBytes("--$boundary\r\n")
+  out.writeBytes("Content-Disposition: form-data; name=\"model_name\"\r\n\r\n")
+  out.writeBytes(filename.substringBeforeLast('.').replace(Regex("[^A-Za-z0-9_.-]"),"-")+"\r\n")
+  out.writeBytes("--$boundary\r\n")
+  out.writeBytes("Content-Disposition: form-data; name=\"file\"; filename=\"$filename\"\r\n")
+  out.writeBytes("Content-Type: application/octet-stream\r\n\r\n")
+  context.contentResolver.openInputStream(uri)?.use{input->
+   val buffer=ByteArray(1024*1024);while(true){val count=input.read(buffer);if(count<0)break;out.write(buffer,0,count)}
+  }?:throw IllegalStateException("無法讀取選取的 GGUF 檔案")
+  out.writeBytes("\r\n--$boundary--\r\n")
+ }
+ val code=connection.responseCode
+ val stream=if(code in 200..299)connection.inputStream else connection.errorStream
+ val body=stream?.bufferedReader()?.use{it.readText()}?:""
+ connection.disconnect()
+ if(code !in 200..299)throw IllegalStateException("HTTP $code: $body")
+ JSONObject(body)
 }
 
 private fun downloadApk(context:Context,base:String,job:String){
