@@ -216,7 +216,7 @@ fun RuiBuilderApp(){
           else modelDownloadMessage="下載仍在執行，請稍後重新整理狀態"
          }catch(e:Exception){modelDownloadMessage="模型下載失敗：${e.message}"}
          modelDownloadBusy=false
-        }){Text(if(activeModelName==name)"使用中" else if(installed)"啟用" else "下載 / 使用")}
+        }}){Text(if(activeModelName==name)"使用中" else if(installed)"啟用" else "下載 / 使用")}
        }
       }
       if(modelDownloadBusy||modelDownloadMessage.isNotBlank()){
