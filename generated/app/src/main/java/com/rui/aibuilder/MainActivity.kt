@@ -70,7 +70,12 @@ fun RuiBuilderApp(){
  var projectFiles by remember{mutableStateOf<Map<String,String>>(emptyMap())}
  var jobId by remember{mutableStateOf("")}
  var projectName by remember{mutableStateOf("RuiGeneratedApp")}
- var modelStatus by remember{mutableStateOf("正在讀取模型清單…")}\n var builtinModels by remember{mutableStateOf(listOf<Triple<String,String,Boolean>>())}\n var activeModelName by remember{mutableStateOf("")}\n var modelDownloadProgress by remember{mutableStateOf(0f)}\n var modelDownloadMessage by remember{mutableStateOf("")}\n var modelDownloadBusy by remember{mutableStateOf(false)}
+ var modelStatus by remember{mutableStateOf("正在讀取模型清單…")}
+ var builtinModels by remember{mutableStateOf(listOf<Triple<String,String,Boolean>>())}
+ var activeModelName by remember{mutableStateOf("")}
+ var modelDownloadProgress by remember{mutableStateOf(0f)}
+ var modelDownloadMessage by remember{mutableStateOf("")}
+ var modelDownloadBusy by remember{mutableStateOf(false)}
  val messages= remember{mutableStateListOf(ChatLine("你好！我是 Rui AI APK Builder。免登入模式已啟用，描述你的 App，我會產生 Android 專案並交給雲端 Worker 編譯 APK。",false))}
  val scope= rememberCoroutineScope()
  LaunchedEffect(endpoint){
@@ -91,8 +96,16 @@ fun RuiBuilderApp(){
    val name=queryDisplayName(context,uri)
    if(!name.lowercase().endsWith(".gguf")){status="檔案格式錯誤：請選擇 .gguf";return@launch}
    busy=true;status="正在上傳 GGUF 並匯入雲端 Ollama…"
-   try{val result=uploadGguf(context,endpoint,uri,name);modelStatus="目前模型："+result.optString("active");status="GGUF 匯入成功，已切換模型："+result.optString("name")}
-   catch(e:Exception){status="GGUF 匯入失敗："+(e.message?:"未知錯誤")}
+   try{
+    val result=uploadGguf(context,endpoint,uri,name)
+    if(!result.optBoolean("verified",false))throw IllegalStateException("伺服器未完成模型驗證，請勿使用此模型")
+    val catalog=api(endpoint,"/api/models/catalog",null,null)
+    val arr=catalog.optJSONArray("models")?:org.json.JSONArray()
+    builtinModels=(0 until arr.length()).map{val o=arr.getJSONObject(it);Triple(o.optString("name"),o.optString("description"),o.optBoolean("installed",false))}
+    activeModelName=result.optString("active")
+    modelStatus="目前使用："+activeModelName
+    status="GGUF 匯入成功，已通過雲端模型存在性驗證並切換："+result.optString("name")
+   }catch(e:Exception){status="GGUF 匯入失敗："+(e.message?:"未知錯誤")}
    busy=false
   }
  }
