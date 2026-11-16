@@ -95,7 +95,7 @@ fun RuiBuilderApp(){
   if(uri!=null)scope.launch{
    val name=queryDisplayName(context,uri)
    if(!name.lowercase().endsWith(".gguf")){status="檔案格式錯誤：請選擇 .gguf";return@launch}
-   busy=true;status="正在上傳 GGUF 並匯入雲端 Ollama…"
+   busy=true;operationProgress=0f;operationStep="GGUF 匯入：上傳檔案並建立雲端模型";progressIndeterminate=true;status=operationStep
    try{
     val result=uploadGguf(context,endpoint,uri,name)
     if(!result.optBoolean("verified",false))throw IllegalStateException("伺服器未完成模型驗證，請勿使用此模型")
@@ -104,8 +104,8 @@ fun RuiBuilderApp(){
     builtinModels=(0 until arr.length()).map{val o=arr.getJSONObject(it);Triple(o.optString("name"),o.optString("description"),o.optBoolean("installed",false))}
     activeModelName=result.optString("active")
     modelStatus="目前使用："+activeModelName
-    status="GGUF 匯入成功，已通過雲端模型存在性驗證並切換："+result.optString("name")
-   }catch(e:Exception){status="GGUF 匯入失敗："+(e.message?:"未知錯誤")}
+    progressIndeterminate=false;operationProgress=1f;operationStep="完成：GGUF 已匯入並通過實際推理測試";status="GGUF 匯入成功，已通過雲端推理驗證並切換："+result.optString("name")
+   }catch(e:Exception){progressIndeterminate=false;status="GGUF 匯入失敗："+(e.message?:"未知錯誤")}
    busy=false
   }
  }
