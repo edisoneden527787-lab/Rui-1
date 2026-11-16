@@ -86,19 +86,21 @@ fun RuiBuilderApp(){
  }
 
  suspend fun generate(){
-  if(prompt.isBlank())return
+  val requestedPrompt=prompt.trim()
+  if(requestedPrompt.isBlank())return
+  messages.add(ChatLine(requestedPrompt,true))
   busy=true;status="AI 正在生成 Android 專案…"
   try{
-   val result=api(endpoint,"/api/projects/generate",JSONObject().put("prompt",prompt).put("review_enabled",reviewEnabled),null)
+   val result=api(endpoint,"/api/projects/generate",JSONObject().put("prompt",requestedPrompt).put("review_enabled",reviewEnabled),null)
    val obj=result.getJSONObject("files");val map=mutableMapOf<String,String>()
    val keys=obj.keys();while(keys.hasNext()){val key=keys.next();map[key]=obj.getString(key)}
    projectFiles=map
    projectName=result.optString("project_name","RuiGeneratedApp")
-   saveHistory(prompt,projectName,"","專案已生成")
+   saveHistory(requestedPrompt,projectName,"","專案已生成")
    messages.add(ChatLine("專案已生成：${result.optString("project_name","RuiGeneratedApp")}，共 ${map.size} 個檔案。\n${result.optString("notes","")}\n確認後按「雲端編譯 APK」。",false))
    status="專案生成完成（${map.size} 個檔案）"
-  }catch(e:Exception){status="生成失敗：${e.message}"}
-  busy=false
+  }catch(e:Exception){status="生成失敗：${e.message?:e.javaClass.simpleName}";messages.add(ChatLine("生成失敗：${e.message?:e.javaClass.simpleName}",false))}
+  finally{busy=false}
  }
 
  suspend fun build(){
@@ -122,17 +124,17 @@ fun RuiBuilderApp(){
     }
    }
    if(!finished)status="編譯仍在執行，可稍後再次查詢：$jobId"
-  }catch(e:Exception){status="提交/編譯失敗：${e.message}"}
-  busy=false
+  }catch(e:Exception){status="提交/編譯失敗：${e.message?:e.javaClass.simpleName}";messages.add(ChatLine("編譯錯誤：${e.message?:e.javaClass.simpleName}",false))}
+  finally{busy=false}
  }
 
  MaterialTheme(colorScheme=darkColorScheme(primary=Accent,background=Bg,surface=Panel,onBackground=Color.White,onSurface=Color.White)){
-  Scaffold(containerColor=Bg,topBar={TopAppBar(title={Column{Text("Rui AI APK Builder",fontWeight=FontWeight.Bold);Text("免登入 · 雲端 Android 開發工作台",color=Muted,style=MaterialTheme.typography.labelSmall)}},actions={Row{TextButton(onClick={showHistory=true}){Text("歷史")};TextButton(onClick={showSettings=true}){Text("設定")}}},colors=TopAppBarDefaults.topAppBarColors(containerColor=Bg,titleContentColor=Color.White))},
+  Scaffold(containerColor=Bg,topBar={TopAppBar(title={Column{Text("Rui AI Builder",fontWeight=FontWeight.Bold,style=MaterialTheme.typography.titleLarge);Text("ANDROID STUDIO · CLOUD BUILD",color=Muted,style=MaterialTheme.typography.labelSmall)}},actions={Row{TextButton(onClick={showHistory=true}){Text("歷史")};TextButton(onClick={showSettings=true}){Text("設定")}}},colors=TopAppBarDefaults.topAppBarColors(containerColor=Bg,titleContentColor=Color.White))},
   bottomBar={Column(Modifier.fillMaxWidth().background(Bg).padding(12.dp)){
    Text(status,color=Muted,style=MaterialTheme.typography.labelSmall)
    if(busy){Spacer(Modifier.height(5.dp));LinearProgressIndicator(Modifier.fillMaxWidth())}
    Spacer(Modifier.height(6.dp))
-   OutlinedTextField(value=prompt,onValueChange={prompt=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("描述你要開發的 Android App…",color=Muted)},minLines=2,maxLines=5,shape=RoundedCornerShape(16.dp),enabled=!busy)
+   OutlinedTextField(value=prompt,onValueChange={prompt=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("例如：製作一款有相機、相簿與濾鏡的圖片編輯 App…",color=Muted)},minLines=2,maxLines=5,shape=RoundedCornerShape(18.dp),enabled=!busy,colors=OutlinedTextFieldDefaults.colors(focusedBorderColor=Accent,focusedContainerColor=Panel,unfocusedContainerColor=Panel))
    Spacer(Modifier.height(8.dp))
    Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
     Button(onClick={scope.launch{generate()}},enabled=!busy&&prompt.isNotBlank(),modifier=Modifier.weight(1f)){Text("生成專案")}
@@ -146,7 +148,8 @@ fun RuiBuilderApp(){
    Column(Modifier.fillMaxSize().padding(padding).padding(horizontal=14.dp)){
     Card(colors=CardDefaults.cardColors(containerColor=Panel),shape=RoundedCornerShape(16.dp)){
      Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
-      Text("專案工作區",fontWeight=FontWeight.SemiBold)
+      Text("工作台",fontWeight=FontWeight.Bold,style=MaterialTheme.typography.titleMedium)
+      Text("描述需求、匯入模型，然後編譯成可安裝的 APK。",color=Muted,style=MaterialTheme.typography.bodySmall)
       Text(if(projectFiles.isEmpty())"尚未生成專案" else "已載入 ${projectFiles.size} 個專案檔案",color=Muted,style=MaterialTheme.typography.bodySmall)
       Text(modelStatus,color=Accent,style=MaterialTheme.typography.bodySmall)
       OutlinedButton(onClick={ggufPicker.launch(arrayOf("*/*"))},enabled=!busy,modifier=Modifier.fillMaxWidth()){Text("選擇並上傳 .GGUF 模型到雲端")}
@@ -182,7 +185,7 @@ fun RuiBuilderApp(){
         Text(h.projectName,fontWeight=FontWeight.SemiBold)
         Text(h.prompt,maxLines=2,color=Muted,style=MaterialTheme.typography.bodySmall)
         Text(h.status+(if(h.jobId.isNotBlank())" · 工作 ${h.jobId}" else ""),color=Accent,style=MaterialTheme.typography.labelSmall)
-        TextButton(onClick={prompt=h.prompt;jobId=h.jobId;projectName=h.projectName;projectFiles=emptyMap();status="已載入歷史紀錄";showHistory=false}){Text("載入")}
+        TextButton(onClick={prompt=h.prompt;jobId=h.jobId;projectName=h.projectName;projectFiles=emptyMap();status="提示詞已載入；請重新生成專案以還原檔案";showHistory=false}){Text("載入")}
        }
       }
      }
