@@ -11,7 +11,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: build-generated-apk
+  group: build-generated-apk-${{ github.sha }}
   cancel-in-progress: false
 jobs:
   build:
