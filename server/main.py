@@ -15,6 +15,7 @@ OLLAMA_MODEL=os.getenv("OLLAMA_MODEL","qwen2.5-coder:7b")
 WORKER_URL=os.getenv("WORKER_URL","http://worker:8010")
 WORKER_SECRET=os.getenv("WORKER_SECRET","change-this-worker-secret")
 SESSION_SECRET=os.getenv("SESSION_SECRET","")
+DATA=Path(os.getenv("JOB_DATA","/data/jobs")); DATA.mkdir(parents=True,exist_ok=True)
 MODEL_STATE=DATA/"active-model.json"
 MAX_GGUF_BYTES=int(os.getenv("MAX_GGUF_BYTES",str(700*1024*1024)))
 def active_model():
@@ -23,7 +24,6 @@ def active_model():
         return name if name else OLLAMA_MODEL
     except Exception:
         return OLLAMA_MODEL
-DATA=Path(os.getenv("JOB_DATA","/data/jobs")); DATA.mkdir(parents=True,exist_ok=True)
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1,max_length=50000)
