@@ -4,14 +4,14 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 android {
-    namespace = "com.rui.photostudio"
+    namespace = "com.rui.aibuilder"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.rui.photostudio"
-        minSdk = 29
+        applicationId = "com.rui.aibuilder"
+        minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "1.0.0"
     }
     buildFeatures { compose = true }
     compileOptions {

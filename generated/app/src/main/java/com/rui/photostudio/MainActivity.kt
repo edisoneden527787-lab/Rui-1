@@ -15,6 +15,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -58,11 +60,6 @@ private fun Studio() {
     var contrast by remember { mutableFloatStateOf(0f) }
     var saturation by remember { mutableFloatStateOf(0f) }
     var temperature by remember { mutableFloatStateOf(0f) }
-    var highlights by remember { mutableFloatStateOf(0f) }
-    var shadows by remember { mutableFloatStateOf(0f) }
-    var whites by remember { mutableFloatStateOf(0f) }
-    var blacks by remember { mutableFloatStateOf(0f) }
-    var sharpening by remember { mutableFloatStateOf(0f) }
     var before by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("匯入照片以開始編輯") }
@@ -77,17 +74,16 @@ private fun Studio() {
                 }
                 original = bitmap
                 exposure = 0f; contrast = 0f; saturation = 0f; temperature = 0f
-                highlights = 0f; shadows = 0f; whites = 0f; blacks = 0f; sharpening = 0f
                 preview = bitmap
                 note = "已載入照片 · ${bitmap.width} × ${bitmap.height}"
             } catch (e: Exception) { note = "圖片載入失敗：${e.localizedMessage}" }
             busy = false
         }
     }
-    LaunchedEffect(original, exposure, contrast, saturation, temperature, highlights, shadows, whites, blacks, sharpening) {
+    LaunchedEffect(original, exposure, contrast, saturation, temperature) {
         val src = original ?: return@LaunchedEffect
         busy = true
-        preview = withContext(Dispatchers.Default) { render(src, exposure, contrast, saturation, temperature, highlights, shadows, whites, blacks, sharpening) }
+        preview = withContext(Dispatchers.Default) { render(src, exposure, contrast, saturation, temperature) }
         busy = false
     }
     MaterialTheme(colorScheme = darkColorScheme(primary = gold, background = bg, surface = panel, onSurface = ink)) {
@@ -98,10 +94,9 @@ private fun Studio() {
                     Text("PHOTO STUDIO", color = ink, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
                 }
                 if (original != null) {
-                    TextButton(onClick = { before = !before }) { Text(if (before) "SHOW EDITED" else "BEFORE", color = gold) }
+                    TextButton(onClick = { before = !before }) { Text(if (before) "EDITED" else "BEFORE", color = gold) }
                     TextButton(onClick = {
                         exposure = 0f; contrast = 0f; saturation = 0f; temperature = 0f
-                        highlights = 0f; shadows = 0f; whites = 0f; blacks = 0f; sharpening = 0f
                     }) { Text("RESET", color = ink) }
                     TextButton(onClick = {
                         val bitmap = preview ?: return@TextButton
@@ -134,17 +129,15 @@ private fun Studio() {
                 if (busy) CircularProgressIndicator(color = gold, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp))
             }
             Text(note, color = gold, fontSize = 11.sp, modifier = Modifier.padding(vertical = 8.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(4) { i -> FilterChip(selected = i == 0, onClick = {}, label = { Text(listOf("Light","Color","Detail","AI")[i]) }) }
+            }
             Column(Modifier.heightIn(max = 270.dp).verticalScroll(rememberScrollState()).padding(top = 8.dp)) {
                 SliderRow("曝光", exposure, -2f, 2f) { exposure = it }
                 SliderRow("對比", contrast, -100f, 100f) { contrast = it }
                 SliderRow("飽和度", saturation, -100f, 100f) { saturation = it }
                 SliderRow("色溫", temperature, -100f, 100f) { temperature = it }
-                SliderRow("高光", highlights, -100f, 100f) { highlights = it }
-                SliderRow("陰影", shadows, -100f, 100f) { shadows = it }
-                SliderRow("白色色階", whites, -100f, 100f) { whites = it }
-                SliderRow("黑色色階", blacks, -100f, 100f) { blacks = it }
-                SliderRow("銳化", sharpening, 0f, 100f) { sharpening = it }
-                Text("以上調整會直接作用於像素並套用於匯出。AI 遮罩、HSL、曲線與圖層仍在開發中。", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.padding(8.dp))
+                Text("AI 遮罩、HSL、曲線與圖層尚未整合，暫不提供假操作。", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.padding(8.dp))
             }
         }
     }
@@ -162,74 +155,27 @@ private fun SliderRow(label: String, value: Float, min: Float, max: Float, onCha
     }
 }
 
-private fun render(
-    src: Bitmap,
-    exposure: Float,
-    contrast: Float,
-    saturation: Float,
-    temperature: Float,
-    highlights: Float,
-    shadows: Float,
-    whites: Float,
-    blacks: Float,
-    sharpening: Float
-): Bitmap {
-    val w = src.width
-    val h = src.height
-    val source = IntArray(w * h)
-    src.getPixels(source, 0, w, 0, 0, w, h)
-    val pixels = IntArray(source.size)
+private fun render(src: Bitmap, exposure: Float, contrast: Float, saturation: Float, temperature: Float): Bitmap {
+    val w = src.width; val h = src.height
+    val pixels = IntArray(w * h)
+    src.getPixels(pixels, 0, w, 0, 0, w, h)
     val gain = 2.0.pow(exposure.toDouble()).toFloat()
     val c = 1f + contrast / 100f
-    val sat = 1f + saturation / 100f
-    val temp = temperature * 0.35f
-    val hi = highlights / 100f
-    val sh = shadows / 100f
-    val white = whites / 100f
-    val black = blacks / 100f
-
-    for (y in 0 until h) {
-        for (x in 0 until w) {
-            val i = y * w + x
-            val p = source[i]
-            var r = (Pixel.red(p) * gain + temp).coerceIn(0f, 255f)
-            var g = (Pixel.green(p) * gain).coerceIn(0f, 255f)
-            var b = (Pixel.blue(p) * gain - temp).coerceIn(0f, 255f)
-            var lum = 0.2126f * r + 0.7152f * g + 0.0722f * b
-            val shadowWeight = (1f - lum / 255f).coerceIn(0f, 1f)
-            val highlightWeight = (lum / 255f).coerceIn(0f, 1f)
-            val tone = sh * shadowWeight * 0.65f + hi * highlightWeight * 0.65f +
-                black * (1f - shadowWeight) * 0.35f + white * highlightWeight * 0.35f
-            r = (r + tone * 90f).coerceIn(0f, 255f)
-            g = (g + tone * 90f).coerceIn(0f, 255f)
-            b = (b + tone * 90f).coerceIn(0f, 255f)
-            r = ((r - 128f) * c + 128f).coerceIn(0f, 255f)
-            g = ((g - 128f) * c + 128f).coerceIn(0f, 255f)
-            b = ((b - 128f) * c + 128f).coerceIn(0f, 255f)
-            lum = 0.2126f * r + 0.7152f * g + 0.0722f * b
-            r = (lum + (r - lum) * sat).coerceIn(0f, 255f)
-            g = (lum + (g - lum) * sat).coerceIn(0f, 255f)
-            b = (lum + (b - lum) * sat).coerceIn(0f, 255f)
-
-            if (sharpening > 0f && x in 1 until w - 1 && y in 1 until h - 1) {
-                val center = Pixel.red(source[i]) + Pixel.green(source[i]) + Pixel.blue(source[i])
-                var neighbors = 0
-                for (dy in -1..1) for (dx in -1..1) {
-                    if (dx != 0 || dy != 0) {
-                        val q = source[(y + dy) * w + x + dx]
-                        neighbors += Pixel.red(q) + Pixel.green(q) + Pixel.blue(q)
-                    }
-                }
-                val edge = (center - neighbors / 8f) / 3f
-                val amount = sharpening / 100f * 0.8f
-                r = (r + edge * amount).coerceIn(0f, 255f)
-                g = (g + edge * amount).coerceIn(0f, 255f)
-                b = (b + edge * amount).coerceIn(0f, 255f)
-            }
-            pixels[i] = Pixel.argb(Pixel.alpha(p), r.toInt(), g.toInt(), b.toInt())
-        }
+    val s = 1f + saturation / 100f
+    val t = temperature * 0.35f
+    for (i in pixels.indices) {
+        val p = pixels[i]
+        var r = (Pixel.red(p) * gain + t).coerceIn(0f,255f)
+        var g = (Pixel.green(p) * gain).coerceIn(0f,255f)
+        var b = (Pixel.blue(p) * gain - t).coerceIn(0f,255f)
+        r = ((r - 128f) * c + 128f).coerceIn(0f,255f)
+        g = ((g - 128f) * c + 128f).coerceIn(0f,255f)
+        b = ((b - 128f) * c + 128f).coerceIn(0f,255f)
+        val y = 0.2126f*r + 0.7152f*g + 0.0722f*b
+        r = (y + (r-y)*s).coerceIn(0f,255f)
+        g = (y + (g-y)*s).coerceIn(0f,255f)
+        b = (y + (b-y)*s).coerceIn(0f,255f)
+        pixels[i] = Pixel.argb(Pixel.alpha(p), r.toInt(), g.toInt(), b.toInt())
     }
-    return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also {
-        it.setPixels(pixels, 0, w, 0, 0, w, h)
-    }
+    return Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888).also { it.setPixels(pixels,0,w,0,0,w,h) }
 }
