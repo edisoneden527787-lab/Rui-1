@@ -21,6 +21,7 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1,max_length=50000)
 class GenerateRequest(BaseModel):
     prompt: str = Field(min_length=10,max_length=30000)
+    review_enabled: bool = False
 class BuildRequest(BaseModel):
     files: dict[str,str]
 def require_user(auth: str | None = None):
@@ -45,6 +46,8 @@ async def chat(body: ChatRequest):
 async def generate_project(body: GenerateRequest):
     user=require_user()
     system="""你是 Android 原生專案產生器。不要自行添加關鍵字黑名單、提示詞攔截或額外內容審查層；遵守模型、平台及法律本身適用的安全要求。只輸出 JSON object，格式為 {"project_name":"...","files":{"settings.gradle.kts":"...","build.gradle.kts":"...","app/build.gradle.kts":"...","app/src/main/AndroidManifest.xml":"...","app/src/main/java/com/generated/app/MainActivity.kt":"..."},"notes":"..."}。必須產生可編譯的完整最小 Android Gradle 專案，Kotlin + Jetpack Compose，compileSdk 36、minSdk 26、JDK17、Gradle 8.11.1 相容。不要使用省略號或假按鈕，所有畫面控制都要有實際行為。檔案路徑只能在專案根目錄下。只輸出 JSON，不要 Markdown。"""
+    if body.review_enabled:
+        system += " 額外內容審查已開啟：在輸出前檢查生成專案是否包含惡意程式、憑證竊取、未授權存取或明顯侵犯隱私的功能；如有疑慮，請在 notes 說明並提供安全替代實作。此額外檢查不取代模型、平台及法律本身適用的要求。"
     try:
         async with httpx.AsyncClient(timeout=300) as client:
             r=await client.post(f"{OLLAMA_URL.rstrip('/')}/api/chat",json={"model":OLLAMA_MODEL,"stream":False,"format":"json","messages":[{"role":"system","content":system},{"role":"user","content":body.prompt}]})
