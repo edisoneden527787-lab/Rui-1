@@ -70,14 +70,14 @@ fun RuiBuilderApp(){
  var projectFiles by remember{mutableStateOf<Map<String,String>>(emptyMap())}
  var jobId by remember{mutableStateOf("")}
  var projectName by remember{mutableStateOf("RuiGeneratedApp")}
- var modelStatus by remember{mutableStateOf("正在讀取模型清單…")}\n var builtinModels by remember{mutableStateOf(listOf<Pair<String,String>>())}\n var activeModelName by remember{mutableStateOf("")}\n var modelDownloadProgress by remember{mutableStateOf(0f)}\n var modelDownloadMessage by remember{mutableStateOf("")}\n var modelDownloadBusy by remember{mutableStateOf(false)}
+ var modelStatus by remember{mutableStateOf("正在讀取模型清單…")}\n var builtinModels by remember{mutableStateOf(listOf<Triple<String,String,Boolean>>())}\n var activeModelName by remember{mutableStateOf("")}\n var modelDownloadProgress by remember{mutableStateOf(0f)}\n var modelDownloadMessage by remember{mutableStateOf("")}\n var modelDownloadBusy by remember{mutableStateOf(false)}
  val messages= remember{mutableStateListOf(ChatLine("你好！我是 Rui AI APK Builder。免登入模式已啟用，描述你的 App，我會產生 Android 專案並交給雲端 Worker 編譯 APK。",false))}
  val scope= rememberCoroutineScope()
  LaunchedEffect(endpoint){
   try{
    val catalog=api(endpoint,"/api/models/catalog",null,null)
    val arr=catalog.optJSONArray("models")?:org.json.JSONArray()
-   builtinModels=(0 until arr.length()).map{val o=arr.getJSONObject(it);o.optString("name") to o.optString("description")}
+   builtinModels=(0 until arr.length()).map{val o=arr.getJSONObject(it);Triple(o.optString("name"),o.optString("description"),o.optBoolean("installed",false))}
    activeModelName=catalog.optString("active")
    modelStatus=if(activeModelName.isNotBlank())"目前使用：$activeModelName" else "尚未選擇模型"
   }catch(e:Exception){modelStatus="模型清單載入失敗：${e.message?: "API 無法連線"}"}
@@ -181,11 +181,11 @@ fun RuiBuilderApp(){
       Text(modelStatus,color=Accent,style=MaterialTheme.typography.bodySmall)
       Text("內建雲端模型",fontWeight=FontWeight.SemiBold)
       if(builtinModels.isEmpty()) Text("正在載入模型清單，請確認 API 已更新。",color=Muted,style=MaterialTheme.typography.bodySmall)
-      builtinModels.forEach{(name,description)->
+      builtinModels.forEach{(name,description,installed)->
        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){
         Column(Modifier.weight(1f)){Text(name,style=MaterialTheme.typography.bodyMedium);Text(description,color=Muted,style=MaterialTheme.typography.labelSmall)}
         TextButton(enabled=!busy&&!modelDownloadBusy,onClick={scope.launch{
-         modelDownloadBusy=true;modelDownloadProgress=0f;modelDownloadMessage="正在建立模型下載工作…"
+         modelDownloadBusy=true;modelDownloadProgress=0f;modelDownloadMessage=if(installed)"正在啟用已安裝模型…" else "正在建立模型下載工作…"
          try{
           api(endpoint,"/api/models/pull/"+name,null,null)
           var state="queued"
@@ -203,7 +203,7 @@ fun RuiBuilderApp(){
           else modelDownloadMessage="下載仍在執行，請稍後重新整理狀態"
          }catch(e:Exception){modelDownloadMessage="模型下載失敗：${e.message}"}
          modelDownloadBusy=false
-        }){Text(if(activeModelName==name)"使用中" else "下載 / 使用")}
+        }){Text(if(activeModelName==name)"使用中" else if(installed)"啟用" else "下載 / 使用")}
        }
       }
       if(modelDownloadBusy||modelDownloadMessage.isNotBlank()){
