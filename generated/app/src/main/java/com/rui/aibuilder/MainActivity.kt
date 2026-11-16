@@ -48,7 +48,7 @@ class MainActivity:ComponentActivity(){
 fun RuiBuilderApp(){
  val context= LocalContext.current
  val prefs= remember{context.getSharedPreferences("rui_builder",Context.MODE_PRIVATE)}
- var endpoint by remember{mutableStateOf(prefs.getString("endpoint","")?:"")}
+ var endpoint by remember{mutableStateOf(prefs.getString("endpoint","https://api-production-3704ca67.up.railway.app")?:"https://api-production-3704ca67.up.railway.app")}
  var webClientId by remember{mutableStateOf(prefs.getString("web_client_id","")?:"")}
  var idToken by remember{mutableStateOf(prefs.getString("session_token","")?:"")}
  var userEmail by remember{mutableStateOf(prefs.getString("user_email","")?:"")}
