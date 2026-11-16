@@ -102,7 +102,7 @@ fun RuiBuilderApp(){
     Button(onClick={scope.launch{build()}},enabled=!busy&&projectFiles.isNotEmpty(),modifier=Modifier.weight(1f)){Text("雲端編譯")}
    }
    if(jobId.isNotBlank())Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
-    OutlinedButton(onClick={scope.launch{try{val s=api(endpoint,"/api/build/$jobId",null,idToken);status="編譯狀態：${s.optString("status")}"}catch(e:Exception){status=e.message?:"查詢失敗"}}},modifier=Modifier.weight(1f)){Text("查詢狀態")}
+    OutlinedButton(onClick={scope.launch{try{val s=api(endpoint,"/api/build/$jobId",null,null);status="編譯狀態：${s.optString("status")}"}catch(e:Exception){status=e.message?:"查詢失敗"}}},modifier=Modifier.weight(1f)){Text("查詢狀態")}
     OutlinedButton(onClick={ downloadApk(context,endpoint,jobId) },modifier=Modifier.weight(1f)){Text("下載 APK")}
    }
   }}){padding->
