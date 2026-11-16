@@ -1,18 +1,30 @@
 services:
   api:
     build: ./server
-    ports:
-      - "8000:8000"
+    ports: ["8000:8000"]
     environment:
       OLLAMA_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5-coder:7b}
-    depends_on:
-      - ollama
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID in .env}
+      WORKER_URL: http://worker:8010
+      WORKER_SECRET: ${WORKER_SECRET:?Set WORKER_SECRET in .env}
+      JOB_DATA: /data/jobs
+    volumes:
+      - build_jobs:/data/jobs
+    depends_on: [ollama, worker]
+    restart: unless-stopped
+  worker:
+    build: ./worker
+    environment:
+      WORKER_SECRET: ${WORKER_SECRET:?Set WORKER_SECRET in .env}
+      JOB_DATA: /data/jobs
+    volumes:
+      - build_jobs:/data/jobs
     restart: unless-stopped
   ollama:
     image: ollama/ollama:latest
-    volumes:
-      - ollama_data:/root/.ollama
+    volumes: [ollama_data:/root/.ollama]
     restart: unless-stopped
 volumes:
   ollama_data:
+  build_jobs:
