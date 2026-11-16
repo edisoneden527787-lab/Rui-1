@@ -17,6 +17,51 @@ WORKER_SECRET=os.getenv("WORKER_SECRET","change-this-worker-secret")
 SESSION_SECRET=os.getenv("SESSION_SECRET","")
 DATA=Path(os.getenv("JOB_DATA","/data/jobs")); DATA.mkdir(parents=True,exist_ok=True)
 MODEL_STATE=DATA/"active-model.json"
+MODEL_PULL_STATE=DATA/"model-pull.json"
+BUILTIN_MODELS={
+    "qwen2.5-coder:0.5b":"Qwen2.5 Coder 0.5B · 輕量程式模型",
+    "llama3.2:1b":"Llama 3.2 1B · 通用輕量模型"
+}
+def save_pull_state(data):
+    MODEL_PULL_STATE.write_text(json.dumps(data,ensure_ascii=False))
+async def pull_builtin_model(name: str):
+    save_pull_state({"status":"downloading","name":name,"message":"正在連線模型倉庫","completed":0,"total":0})
+    try:
+        async with httpx.AsyncClient(timeout=None) as client:
+            async with client.stream("POST",f"{OLLAMA_URL.rstrip('/')}/api/pull",json={"name":name,"stream":True},timeout=None) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line: continue
+                    try: item=json.loads(line)
+                    except json.JSONDecodeError: continue
+                    save_pull_state({"status":"downloading","name":name,"message":item.get("status","下載模型中"),"completed":item.get("completed",0),"total":item.get("total",0)})
+        MODEL_STATE.write_text(json.dumps({"name":name},ensure_ascii=False))
+        save_pull_state({"status":"success","name":name,"message":"模型下載並載入完成","completed":1,"total":1})
+    except Exception as exc:
+        save_pull_state({"status":"failed","name":name,"message":str(exc),"completed":0,"total":0})
+
+@app.get("/api/models/catalog")
+async def model_catalog():
+    return {"models":[{"name":name,"description":description} for name,description in BUILTIN_MODELS.items()],"active":active_model()}
+
+@app.post("/api/models/pull/{name:path}")
+async def start_model_pull(name: str, background: BackgroundTasks):
+    if name not in BUILTIN_MODELS:
+        raise HTTPException(400,"不在內建模型清單中。")
+    state={}
+    try: state=json.loads(MODEL_PULL_STATE.read_text())
+    except Exception: pass
+    if state.get("status")=="downloading":
+        raise HTTPException(409,"目前已有模型正在下載。")
+    background.add_task(pull_builtin_model,name)
+    save_pull_state({"status":"queued","name":name,"message":"已加入下載佇列","completed":0,"total":0})
+    return {"status":"queued","name":name}
+
+@app.get("/api/models/pull-status")
+async def model_pull_status():
+    try: return json.loads(MODEL_PULL_STATE.read_text())
+    except Exception: return {"status":"idle","message":"目前沒有模型下載工作"}
+
 MAX_GGUF_BYTES=int(os.getenv("MAX_GGUF_BYTES",str(700*1024*1024)))
 def active_model():
     try:
