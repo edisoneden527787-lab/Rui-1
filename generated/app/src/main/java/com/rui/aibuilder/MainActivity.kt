@@ -50,12 +50,12 @@ fun RuiBuilderApp(){
  val prefs= remember{context.getSharedPreferences("rui_builder",Context.MODE_PRIVATE)}
  var endpoint by remember{mutableStateOf(prefs.getString("endpoint","")?:"")}
  var webClientId by remember{mutableStateOf(prefs.getString("web_client_id","")?:"")}
- var idToken by remember{mutableStateOf("")}
+ var idToken by remember{mutableStateOf(prefs.getString("session_token","")?:"")}
  var userEmail by remember{mutableStateOf(prefs.getString("user_email","")?:"")}
  var prompt by remember{mutableStateOf("")}
  var busy by remember{mutableStateOf(false)}
  var showSettings by remember{mutableStateOf(false)}
- var status by remember{mutableStateOf("尚未連接雲端 AI 服務")}
+ var status by remember{mutableStateOf(if(idToken.isNotBlank()) "已恢復登入：$userEmail" else "尚未連接雲端 AI 服務")}
  var projectFiles by remember{mutableStateOf<Map<String,String>>(emptyMap())}
  var jobId by remember{mutableStateOf("")}
  val messages= remember{mutableStateListOf(ChatLine("你好！我是 Rui AI APK Builder。登入 Google 後，描述你的 App，我會產生 Android 專案並交給雲端 Worker 編譯 APK。",false))}
@@ -69,10 +69,12 @@ fun RuiBuilderApp(){
    val credential=CredentialManager.create(context).getCredential(context,request).credential
    if(credential is CustomCredential && credential.type==GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL){
     val google=GoogleIdTokenCredential.createFrom(credential.data)
-    val token=google.idToken
-    val result=api(endpoint,"/api/auth/google",JSONObject().put("id_token",token),null)
-    idToken=token;userEmail=result.optString("email",google.id);prefs.edit().putString("user_email",userEmail).apply()
-    status="Google 已登入：$userEmail"
+    val googleToken=google.idToken
+    val result=api(endpoint,"/api/auth/google",JSONObject().put("id_token",googleToken),null)
+    val session=result.getString("session_token")
+    idToken=session;userEmail=result.optString("email",google.id)
+    prefs.edit().putString("session_token",session).putString("user_email",userEmail).apply()
+    status="Google 已授權雲端 API，登入狀態已保存：$userEmail"
    }else status="Google 登入未取得有效憑證"
   }catch(e:Exception){status="Google 登入失敗：${e.message?: "請檢查 OAuth 設定"}"}
  }
