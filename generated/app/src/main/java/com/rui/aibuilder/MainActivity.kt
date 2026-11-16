@@ -67,9 +67,18 @@ fun RuiBuilderApp(){
  var projectFiles by remember{mutableStateOf<Map<String,String>>(emptyMap())}
  var jobId by remember{mutableStateOf("")}
  var projectName by remember{mutableStateOf("RuiGeneratedApp")}
- var modelStatus by remember{mutableStateOf("目前使用雲端預設模型")}
+ var modelStatus by remember{mutableStateOf("正在讀取模型清單…")}\n var builtinModels by remember{mutableStateOf(listOf<Pair<String,String>>())}\n var activeModelName by remember{mutableStateOf("")}\n var modelDownloadProgress by remember{mutableStateOf(0f)}\n var modelDownloadMessage by remember{mutableStateOf("")}\n var modelDownloadBusy by remember{mutableStateOf(false)}
  val messages= remember{mutableStateListOf(ChatLine("你好！我是 Rui AI APK Builder。免登入模式已啟用，描述你的 App，我會產生 Android 專案並交給雲端 Worker 編譯 APK。",false))}
  val scope= rememberCoroutineScope()
+ LaunchedEffect(endpoint){
+  try{
+   val catalog=api(endpoint,"/api/models/catalog",null,null)
+   val arr=catalog.optJSONArray("models")?:org.json.JSONArray()
+   builtinModels=(0 until arr.length()).map{val o=arr.getJSONObject(it);o.optString("name") to o.optString("description")}
+   activeModelName=catalog.optString("active")
+   modelStatus=if(activeModelName.isNotBlank())"目前使用：$activeModelName" else "尚未選擇模型"
+  }catch(e:Exception){modelStatus="模型清單載入失敗：${e.message?: "API 無法連線"}"}
+ }
  fun saveHistory(pText:String,name:String,job:String,state:String){
   val entry=HistoryItem(System.currentTimeMillis(),pText,name,job,state,System.currentTimeMillis())
   history=(listOf(entry)+history).take(30);writeHistory(prefs,history)
@@ -152,7 +161,38 @@ fun RuiBuilderApp(){
       Text("描述需求、匯入模型，然後編譯成可安裝的 APK。",color=Muted,style=MaterialTheme.typography.bodySmall)
       Text(if(projectFiles.isEmpty())"尚未生成專案" else "已載入 ${projectFiles.size} 個專案檔案",color=Muted,style=MaterialTheme.typography.bodySmall)
       Text(modelStatus,color=Accent,style=MaterialTheme.typography.bodySmall)
-      OutlinedButton(onClick={ggufPicker.launch(arrayOf("*/*"))},enabled=!busy,modifier=Modifier.fillMaxWidth()){Text("選擇並上傳 .GGUF 模型到雲端")}
+      Text("內建雲端模型",fontWeight=FontWeight.SemiBold)
+      if(builtinModels.isEmpty()) Text("正在載入模型清單，請確認 API 已更新。",color=Muted,style=MaterialTheme.typography.bodySmall)
+      builtinModels.forEach{(name,description)->
+       Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){
+        Column(Modifier.weight(1f)){Text(name,style=MaterialTheme.typography.bodyMedium);Text(description,color=Muted,style=MaterialTheme.typography.labelSmall)}
+        TextButton(enabled=!busy&&!modelDownloadBusy,onClick={scope.launch{
+         modelDownloadBusy=true;modelDownloadProgress=0f;modelDownloadMessage="正在建立模型下載工作…"
+         try{
+          api(endpoint,"/api/models/pull/"+name,null,null)
+          var state="queued"
+          for(i in 0 until 1200){
+           val p=api(endpoint,"/api/models/pull-status",null,null)
+           state=p.optString("status")
+           modelDownloadMessage=p.optString("message","下載中…")
+           val total=p.optLong("total");val done=p.optLong("completed")
+           modelDownloadProgress=if(total>0)(done.toFloat()/total).coerceIn(0f,1f) else 0f
+           if(state=="success"||state=="failed")break
+           delay(1500)
+          }
+          if(state=="success"){activeModelName=name;modelStatus="目前使用：$name";modelDownloadMessage="模型下載及載入完成"}
+          else if(state=="failed")modelDownloadMessage="下載失敗："+modelDownloadMessage
+          else modelDownloadMessage="下載仍在執行，請稍後重新整理狀態"
+         }catch(e:Exception){modelDownloadMessage="模型下載失敗：${e.message}"}
+         modelDownloadBusy=false
+        }){Text(if(activeModelName==name)"使用中" else "下載 / 使用")}
+       }
+      }
+      if(modelDownloadBusy||modelDownloadMessage.isNotBlank()){
+       Text(modelDownloadMessage,color=Muted,style=MaterialTheme.typography.bodySmall)
+       if(modelDownloadBusy)LinearProgressIndicator(progress={modelDownloadProgress},modifier=Modifier.fillMaxWidth())
+      }
+      OutlinedButton(onClick={ggufPicker.launch(arrayOf("*/*"))},enabled=!busy&&!modelDownloadBusy,modifier=Modifier.fillMaxWidth()){Text("自行匯入 .GGUF 模型到雲端")}
      }
     }
     Spacer(Modifier.height(8.dp))
