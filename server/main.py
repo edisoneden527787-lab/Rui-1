@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="Rui AI APK Builder API", version="0.2.0")
+app = FastAPI(title="Rui AI APK Builder API", version="0.2.1")
 app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "*").split(","), allow_methods=["*"], allow_headers=["*"])
 OLLAMA_URL=os.getenv("OLLAMA_URL","http://ollama:11434")
 OLLAMA_MODEL=os.getenv("OLLAMA_MODEL","qwen2.5-coder:7b")
