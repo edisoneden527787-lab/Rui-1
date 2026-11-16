@@ -183,6 +183,18 @@ async def import_gguf(file: UploadFile = File(...), model_name: str = Form("")):
             check=await client.post(f"{OLLAMA_URL.rstrip('/')}/api/show",json={"name":safe_name})
             if check.is_error:
                 raise HTTPException(502,f"模型已建立但載入驗證失敗（HTTP {check.status_code}）：{check.text[:1500]}")
+            # Verify a real one-token inference before declaring the import usable.
+            smoke=await client.post(
+                f"{OLLAMA_URL.rstrip('/')}/api/chat",
+                json={"model":safe_name,"stream":False,"messages":[{"role":"user","content":"Reply OK"}],"options":{"num_predict":1}},
+                timeout=300
+            )
+            if smoke.is_error:
+                raise HTTPException(502,f"模型存在但實際推理失敗（HTTP {smoke.status_code}）：{smoke.text[:1500]}")
+            try: smoke_data=smoke.json()
+            except Exception: smoke_data={}
+            if not smoke_data.get("message",{}).get("content"):
+                raise HTTPException(502,"模型已匯入，但測試推理沒有產生回覆；尚未切換模型。")
         MODEL_STATE.write_text(json.dumps({"name":safe_name},ensure_ascii=False))
         return {"ok":True,"name":safe_name,"size":total,"active":safe_name,"verified":True,"message":"GGUF 已匯入，且 Ollama 已確認模型存在。"}
     except HTTPException:
