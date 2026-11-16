@@ -50,7 +50,7 @@ fun RuiBuilderApp(){
  val prefs= remember{context.getSharedPreferences("rui_builder",Context.MODE_PRIVATE)}
  var endpoint by remember{mutableStateOf(prefs.getString("endpoint","")?:"")}
  var webClientId by remember{mutableStateOf(prefs.getString("web_client_id","")?:"")}
- var idToken by remember{mutableStateOf(prefs.getString("id_token","")?:"")}
+ var idToken by remember{mutableStateOf("")}
  var userEmail by remember{mutableStateOf(prefs.getString("user_email","")?:"")}
  var prompt by remember{mutableStateOf("")}
  var busy by remember{mutableStateOf(false)}
@@ -71,7 +71,7 @@ fun RuiBuilderApp(){
     val google=GoogleIdTokenCredential.createFrom(credential.data)
     val token=google.idToken
     val result=api(endpoint,"/api/auth/google",JSONObject().put("id_token",token),null)
-    idToken=token;userEmail=result.optString("email",google.id);prefs.edit().putString("id_token",token).putString("user_email",userEmail).apply()
+    idToken=token;userEmail=result.optString("email",google.id);prefs.edit().putString("user_email",userEmail).apply()
     status="Google 已登入：$userEmail"
    }else status="Google 登入未取得有效憑證"
   }catch(e:Exception){status="Google 登入失敗：${e.message?: "請檢查 OAuth 設定"}"}

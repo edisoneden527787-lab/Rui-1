@@ -29,4 +29,4 @@
 - `GET /api/build/{job_id}/download`：成功後下載 APK。
 
 ## 重要限制
-這個提交補上後端的 Google Token 驗證、AI 專案生成 API 與真正的雲端 Gradle Worker。Android APK 本身目前仍是聊天客戶端；Google Credential Manager 登入按鈕、專案檔案瀏覽/保存、編譯進度與 APK 下載 UI 尚待接入。雲端服務也尚未部署；僅把程式碼推到 GitHub 不會自動啟動 Ollama/Worker。Google OAuth Client ID、HTTPS 網域與伺服器資源需由部署環境提供。
+Android APK 已接上 Google Credential Manager 登入、AI 專案生成、雲端編譯提交/狀態查詢與 APK 下載操作；目前尚未提供完整的逐檔程式碼編輯器、專案長期雲端保存與多使用者用量管理。ID Token 僅保留在目前 App 執行期間，重新開啟 App 需重新登入。雲端服務尚未部署；僅把程式碼推到 GitHub 不會自動啟動 Ollama/Worker。Google OAuth Web Client ID、HTTPS 網域與伺服器資源需由部署環境提供。
