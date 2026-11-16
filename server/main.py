@@ -3,7 +3,7 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI, HTTPException, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
@@ -107,16 +107,40 @@ async def build(body: BuildRequest, background: BackgroundTasks, authorization: 
 
 @app.get("/api/build/{job_id}")
 async def build_status(job_id: str, authorization: str | None=Header(default=None)):
-    require_user(authorization)
+    user=require_user(authorization)
     if not job_id.isalnum() or len(job_id)>32: raise HTTPException(400,"job_id 格式錯誤")
-    status=DATA/job_id/"status.json"
-    if not status.exists(): return {"job_id":job_id,"status":"queued"}
-    return {"job_id":job_id,**json.loads(status.read_text())}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r=await client.get(f"{WORKER_URL.rstrip('/')}/build/{job_id}",headers={"X-Worker-Secret":WORKER_SECRET})
+            if r.status_code==404: return {"job_id":job_id,"status":"queued"}
+            r.raise_for_status()
+            result=r.json()
+        if result.get("owner") and result.get("owner")!=user.get("sub",""):
+            raise HTTPException(403,"無權查看此編譯工作。")
+        return {"job_id":job_id,**result}
+    except HTTPException: raise
+    except httpx.HTTPError as exc:
+        status=DATA/job_id/"status.json"
+        if status.exists(): return {"job_id":job_id,**json.loads(status.read_text())}
+        raise HTTPException(502,"無法取得 Worker 編譯狀態。") from exc
 
 @app.get("/api/build/{job_id}/download")
 async def download_apk(job_id: str, authorization: str | None=Header(default=None)):
-    require_user(authorization)
+    user=require_user(authorization)
     if not job_id.isalnum() or len(job_id)>32: raise HTTPException(400,"job_id 格式錯誤")
-    apk=DATA/job_id/"app-debug.apk"
-    if not apk.exists(): raise HTTPException(409,"APK 尚未完成，請先查詢編譯狀態。")
-    return FileResponse(apk,filename=f"rui-{job_id}.apk",media_type="application/vnd.android.package-archive")
+    headers={"X-Worker-Secret":WORKER_SECRET}
+    try:
+        async with httpx.AsyncClient(timeout=180) as client:
+            status=await client.get(f"{WORKER_URL.rstrip('/')}/build/{job_id}",headers=headers)
+            if status.status_code==404: raise HTTPException(409,"APK 尚未完成，請先查詢編譯狀態。")
+            status.raise_for_status()
+            meta=status.json()
+            if meta.get("owner") and meta.get("owner")!=user.get("sub",""):
+                raise HTTPException(403,"無權下載此 APK。")
+            if meta.get("status")!="success": raise HTTPException(409,"APK 尚未完成，請先查詢編譯狀態。")
+            apk=await client.get(f"{WORKER_URL.rstrip('/')}/build/{job_id}/download",headers=headers)
+            apk.raise_for_status()
+            return Response(content=apk.content,media_type="application/vnd.android.package-archive",headers={"Content-Disposition":f'attachment; filename="rui-{job_id}.apk"'})
+    except HTTPException: raise
+    except httpx.HTTPError as exc:
+        raise HTTPException(502,"Worker APK 下載失敗。") from exc
