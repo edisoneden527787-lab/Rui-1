@@ -121,7 +121,7 @@ async def generate_project(body: GenerateRequest):
         system += " 額外內容審查已開啟：在輸出前檢查生成專案是否包含惡意程式、憑證竊取、未授權存取或明顯侵犯隱私的功能；如有疑慮，請在 notes 說明並提供安全替代實作。此額外檢查不取代模型、平台及法律本身適用的要求。"
     try:
         async with httpx.AsyncClient(timeout=300) as client:
-            r=await client.post(f"{OLLAMA_URL.rstrip('/')}/api/chat",json={"model":OLLAMA_MODEL,"stream":False,"format":"json","messages":[{"role":"system","content":system},{"role":"user","content":body.prompt}]})
+            r=await client.post(f"{OLLAMA_URL.rstrip('/')}/api/chat",json={"model":active_model(),"stream":False,"format":"json","messages":[{"role":"system","content":system},{"role":"user","content":body.prompt}]})
             r.raise_for_status()
             raw=r.json().get("message",{}).get("content","")
         result=json.loads(raw)
