@@ -18,9 +18,10 @@ SESSION_SECRET=os.getenv("SESSION_SECRET","")
 DATA=Path(os.getenv("JOB_DATA","/data/jobs")); DATA.mkdir(parents=True,exist_ok=True)
 MODEL_STATE=DATA/"active-model.json"
 MODEL_PULL_STATE=DATA/"model-pull.json"
+# Keep the built-in catalog within the existing 500 MB model volume.
+# Only expose the lightweight model; larger models require user-provided storage.
 BUILTIN_MODELS={
-    "qwen2.5-coder:0.5b":"Qwen2.5 Coder 0.5B · 輕量程式模型",
-    "llama3.2:1b":"Llama 3.2 1B · 通用輕量模型"
+    "qwen2.5-coder:0.5b":"Qwen2.5 Coder 0.5B · 輕量程式模型（單一內建模型）"
 }
 def save_pull_state(data):
     MODEL_PULL_STATE.write_text(json.dumps(data,ensure_ascii=False))
@@ -42,7 +43,15 @@ async def pull_builtin_model(name: str):
 
 @app.get("/api/models/catalog")
 async def model_catalog():
-    return {"models":[{"name":name,"description":description} for name,description in BUILTIN_MODELS.items()],"active":active_model()}
+    installed=set()
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response=await client.get(f"{OLLAMA_URL.rstrip('/')}/api/tags")
+            response.raise_for_status()
+            installed={item.get("name","") for item in response.json().get("models",[])}
+    except httpx.HTTPError as exc:
+        raise HTTPException(502,f"無法讀取雲端模型：{exc}") from exc
+    return {"models":[{"name":name,"description":description,"installed":name in installed} for name,description in BUILTIN_MODELS.items()],"active":active_model(),"storage_limit_mb":500,"storage_policy":"single-lightweight-model"}
 
 @app.post("/api/models/pull/{name:path}")
 async def start_model_pull(name: str, background: BackgroundTasks):
@@ -53,8 +62,20 @@ async def start_model_pull(name: str, background: BackgroundTasks):
     except Exception: pass
     if state.get("status")=="downloading":
         raise HTTPException(409,"目前已有模型正在下載。")
+    # Reuse an already-installed model instead of downloading a duplicate.
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response=await client.get(f"{OLLAMA_URL.rstrip('/')}/api/tags")
+            response.raise_for_status()
+            installed={item.get("name","") for item in response.json().get("models",[])}
+        if name in installed:
+            MODEL_STATE.write_text(json.dumps({"name":name},ensure_ascii=False))
+            save_pull_state({"status":"success","name":name,"message":"模型已預先安裝，已直接切換使用，沒有重新下載","completed":1,"total":1})
+            return {"status":"success","name":name,"message":"已切換至現有模型"}
+    except httpx.HTTPError as exc:
+        raise HTTPException(502,f"無法檢查現有模型：{exc}") from exc
     background.add_task(pull_builtin_model,name)
-    save_pull_state({"status":"queued","name":name,"message":"已加入下載佇列","completed":0,"total":0})
+    save_pull_state({"status":"queued","name":name,"message":"檢查完成，開始下載輕量模型","completed":0,"total":0})
     return {"status":"queued","name":name}
 
 @app.get("/api/models/pull-status")
