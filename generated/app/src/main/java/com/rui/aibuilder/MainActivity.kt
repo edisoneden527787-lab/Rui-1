@@ -118,7 +118,7 @@ fun RuiBuilderApp(){
  }
 
  MaterialTheme(colorScheme=darkColorScheme(primary=Accent,background=Bg,surface=Panel,onBackground=Color.White,onSurface=Color.White)){
-  Scaffold(containerColor=Bg,topBar={TopAppBar(title={Column{Text("Rui AI APK Builder",fontWeight=FontWeight.Bold);Text(if(userEmail.isBlank())"雲端 Android 開發工作台" else userEmail,color=Muted,style=MaterialTheme.typography.labelSmall)}},actions={TextButton(onClick={showSettings=true}){Text("設定")};TextButton(enabled=!busy,onClick={ {scope.launch{login()}} }){Text(if(idToken.isBlank())"Google 登入" else "已登入")}},colors=TopAppBarDefaults.topAppBarColors(containerColor=Bg,titleContentColor=Color.White))},
+  Scaffold(containerColor=Bg,topBar={TopAppBar(title={Column{Text("Rui AI APK Builder",fontWeight=FontWeight.Bold);Text(if(userEmail.isBlank())"雲端 Android 開發工作台" else userEmail,color=Muted,style=MaterialTheme.typography.labelSmall)}},actions={TextButton(onClick={showSettings=true}){Text("設定")};TextButton(enabled=!busy,onClick={ scope.launch{login()} }){Text(if(idToken.isBlank())"Google 登入" else "已登入")}},colors=TopAppBarDefaults.topAppBarColors(containerColor=Bg,titleContentColor=Color.White))},
   bottomBar={Column(Modifier.fillMaxWidth().background(Bg).padding(12.dp)){
    Text(status,color=Muted,style=MaterialTheme.typography.labelSmall);Spacer(Modifier.height(6.dp))
    OutlinedTextField(value=prompt,onValueChange={prompt=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("描述你要開發的 Android App…",color=Muted)},minLines=2,maxLines=5,shape=RoundedCornerShape(16.dp),enabled=!busy)
@@ -129,7 +129,7 @@ fun RuiBuilderApp(){
    }
    if(jobId.isNotBlank())Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
     OutlinedButton(onClick={scope.launch{try{val s=api(endpoint,"/api/build/$jobId",null,idToken);status="編譯狀態：${s.optString("status")}"}catch(e:Exception){status=e.message?:"查詢失敗"}}},modifier=Modifier.weight(1f)){Text("查詢狀態")}
-    OutlinedButton(onClick={ {downloadApk(context,endpoint,jobId,idToken)} },modifier=Modifier.weight(1f)){Text("下載 APK")}
+    OutlinedButton(onClick={ downloadApk(context,endpoint,jobId,idToken) },modifier=Modifier.weight(1f)){Text("下載 APK")}
    }
   }}){padding->
    Column(Modifier.fillMaxSize().padding(padding).padding(horizontal=14.dp)){
