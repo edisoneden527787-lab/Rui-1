@@ -64,10 +64,10 @@ jobs:
           test -n "$APK"
           cp "$APK" "$RUNNER_TEMP/ai-app-debug.apk"
           ls -lh "$RUNNER_TEMP/ai-app-debug.apk"
-      - name: 建立 Release 並上傳 APK
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          TAG="build-${{ github.run_number }}-$(date -u +%Y%m%d%H%M%S)"
-          gh release create "$TAG" "$RUNNER_TEMP/ai-app-debug.apk" --repo "${{ github.repository }}" --title "編譯 $TAG" --notes "Commit：${{ github.sha }}" --target "${{ github.sha }}"
+      - name: 上傳 APK 編譯產物
+        uses: actions/upload-artifact@v4
+        with:
+          name: rui-ai-apk
+          path: ${{ runner.temp }}/ai-app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
