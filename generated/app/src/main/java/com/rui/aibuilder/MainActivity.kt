@@ -61,6 +61,7 @@ fun RuiBuilderApp(){
  var busy by remember{mutableStateOf(false)}
  var operationProgress by remember{mutableStateOf(0f)}
  var operationStep by remember{mutableStateOf("")}
+ var progressIndeterminate by remember{mutableStateOf(false)}
  var showSettings by remember{mutableStateOf(false)}
  var showHistory by remember{mutableStateOf(false)}
  var reviewEnabled by remember{mutableStateOf(prefs.getBoolean("review_enabled",false))}
@@ -102,9 +103,9 @@ fun RuiBuilderApp(){
   messages.add(ChatLine(requestedPrompt,true))
   busy=true;operationProgress=0.08f;operationStep="步驟 1/3：連線雲端模型";status="步驟 1/3：正在連線雲端模型…"
   try{
-   operationStep="步驟 2/3：模型正在理解需求並生成 Android 程式碼";status=operationStep
+   operationStep="步驟 2/3：模型正在理解需求並生成 Android 程式碼";progressIndeterminate=true;status=operationStep
    val result=api(endpoint,"/api/projects/generate",JSONObject().put("prompt",requestedPrompt).put("review_enabled",reviewEnabled),null)
-   operationProgress=0.88f;operationStep="步驟 3/3：驗證專案檔案與 Gradle 結構";status=operationStep
+   progressIndeterminate=false;operationProgress=0.88f;operationStep="步驟 3/3：驗證專案檔案與 Gradle 結構";status=operationStep
    val obj=result.getJSONObject("files");val map=mutableMapOf<String,String>()
    val keys=obj.keys();while(keys.hasNext()){val key=keys.next();map[key]=obj.getString(key)}
    projectFiles=map
@@ -140,6 +141,7 @@ fun RuiBuilderApp(){
       "complete"->"完成：APK 已可下載"
       else->state.optString("message","雲端 Worker 正在處理")
      }
+     progressIndeterminate=(stage=="gradle")
      status=operationStep
      when(state.optString("status")){
       "success"->{finished=true;operationProgress=1f;operationStep="完成：APK 已編譯並封裝";status="APK 編譯完成！按「下載 APK」取得檔案";saveHistory(prompt,projectName,jobId,"編譯成功");messages.add(ChatLine("雲端編譯成功，APK 大小：${state.optLong("size")} bytes。",false))}
@@ -157,7 +159,7 @@ fun RuiBuilderApp(){
   Scaffold(containerColor=Bg,topBar={TopAppBar(title={Column{Text("Rui AI Builder",fontWeight=FontWeight.Bold,style=MaterialTheme.typography.titleLarge);Text("ANDROID STUDIO · CLOUD BUILD",color=Muted,style=MaterialTheme.typography.labelSmall)}},actions={Row{TextButton(onClick={showHistory=true}){Text("歷史")};TextButton(onClick={showSettings=true}){Text("設定")}}},colors=TopAppBarDefaults.topAppBarColors(containerColor=Bg,titleContentColor=Color.White))},
   bottomBar={Column(Modifier.fillMaxWidth().background(Bg).padding(12.dp)){
    Text(status,color=Muted,style=MaterialTheme.typography.labelSmall)
-   if(busy){Spacer(Modifier.height(5.dp));Text(operationStep,color=Accent,style=MaterialTheme.typography.labelSmall);LinearProgressIndicator(progress={operationProgress},modifier=Modifier.fillMaxWidth())}
+   if(busy){Spacer(Modifier.height(5.dp));Text(operationStep,color=Accent,style=MaterialTheme.typography.labelSmall);if(progressIndeterminate)LinearProgressIndicator(modifier=Modifier.fillMaxWidth()) else LinearProgressIndicator(progress={operationProgress},modifier=Modifier.fillMaxWidth())}
    Spacer(Modifier.height(6.dp))
    OutlinedTextField(value=prompt,onValueChange={prompt=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("例如：製作一款有相機、相簿與濾鏡的圖片編輯 App…",color=Muted)},minLines=2,maxLines=5,shape=RoundedCornerShape(18.dp),enabled=!busy,colors=OutlinedTextFieldDefaults.colors(focusedBorderColor=Accent,focusedContainerColor=Panel,unfocusedContainerColor=Panel))
    Spacer(Modifier.height(8.dp))
@@ -206,7 +208,7 @@ fun RuiBuilderApp(){
       }
       if(modelDownloadBusy||modelDownloadMessage.isNotBlank()){
        Text(modelDownloadMessage,color=Muted,style=MaterialTheme.typography.bodySmall)
-       if(modelDownloadBusy)LinearProgressIndicator(progress={modelDownloadProgress},modifier=Modifier.fillMaxWidth())
+       if(modelDownloadBusy){if(modelDownloadProgress>0f)LinearProgressIndicator(progress={modelDownloadProgress},modifier=Modifier.fillMaxWidth()) else LinearProgressIndicator(modifier=Modifier.fillMaxWidth())}
       }
       OutlinedButton(onClick={ggufPicker.launch(arrayOf("*/*"))},enabled=!busy&&!modelDownloadBusy,modifier=Modifier.fillMaxWidth()){Text("自行匯入 .GGUF 模型到雲端")}
      }
