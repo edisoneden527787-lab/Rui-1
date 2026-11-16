@@ -35,13 +35,17 @@ def build(body:Build, x_worker_secret:str|None=Header(default=None)):
     job=ROOT/body.job_id
     if job.exists(): shutil.rmtree(job)
     project=job/"project"; project.mkdir(parents=True)
-    (job/"status.json").write_text(json.dumps({"status":"building","stage":"preparing","owner":body.owner}))
+    def set_stage(stage,progress,message):
+        (job/"status.json").write_text(json.dumps({"status":"building","stage":stage,"progress":progress,"message":message,"owner":body.owner},ensure_ascii=False))
+    set_stage("preparing",5,"建立雲端工作目錄")
+    set_stage("writing_files",12,"正在寫入 Android 專案檔案")
     for name,content in body.files.items():
         p=Path(name)
         if p.is_absolute() or ".." in p.parts or len(content)>500000: continue
         target=project/p
         target.parent.mkdir(parents=True,exist_ok=True)
         target.write_text(content,encoding="utf-8")
+    set_stage("validating",22,"檢查 Gradle 設定、Manifest 與必要檔案")
     required=["settings.gradle.kts","build.gradle.kts","app/build.gradle.kts","app/src/main/AndroidManifest.xml"]
     if not all((project/x).is_file() for x in required):
         (job/"status.json").write_text(json.dumps({"status":"failed","error":"缺少必要 Gradle 檔案","owner":body.owner}))
@@ -50,14 +54,16 @@ def build(body:Build, x_worker_secret:str|None=Header(default=None)):
     (project/"local.properties").write_text(f"sdk.dir={env['ANDROID_HOME']}\n")
     cmd=["gradle","assembleDebug","--no-daemon","--stacktrace"]
     try:
+        set_stage("gradle",35,"Gradle 正在解析依賴並編譯 Android 專案")
         result=subprocess.run(cmd,cwd=project,env=env,text=True,capture_output=True,timeout=900)
         if result.returncode!=0:
             (job/"status.json").write_text(json.dumps({"status":"failed","stage":"gradle","error":(result.stderr+"\n"+result.stdout)[-12000:],"owner":body.owner}))
             return {"status":"failed"}
+        set_stage("packaging",92,"編譯成功，正在整理 APK 檔案")
         candidates=list(project.glob("**/outputs/apk/debug/*.apk"))
         if not candidates: raise RuntimeError("Gradle 成功但沒有找到 debug APK")
         shutil.copy2(candidates[0],job/"app-debug.apk")
-        (job/"status.json").write_text(json.dumps({"status":"success","stage":"complete","apk":"app-debug.apk","size":(job/"app-debug.apk").stat().st_size,"owner":body.owner}))
+        (job/"status.json").write_text(json.dumps({"status":"success","stage":"complete","progress":100,"message":"APK 已完成並可下載","apk":"app-debug.apk","size":(job/"app-debug.apk").stat().st_size,"owner":body.owner}))
         return {"status":"success","size":(job/"app-debug.apk").stat().st_size}
     except subprocess.TimeoutExpired:
         (job/"status.json").write_text(json.dumps({"status":"failed","error":"Gradle 編譯逾時（15 分鐘）","owner":body.owner}))
