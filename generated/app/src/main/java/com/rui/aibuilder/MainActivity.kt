@@ -59,6 +59,8 @@ fun RuiBuilderApp(){
  var endpoint by remember{mutableStateOf(prefs.getString("endpoint","https://api-production-3704ca67.up.railway.app")?:"https://api-production-3704ca67.up.railway.app")}
  var prompt by remember{mutableStateOf("")}
  var busy by remember{mutableStateOf(false)}
+ var operationProgress by remember{mutableStateOf(0f)}
+ var operationStep by remember{mutableStateOf("")}
  var showSettings by remember{mutableStateOf(false)}
  var showHistory by remember{mutableStateOf(false)}
  var reviewEnabled by remember{mutableStateOf(prefs.getBoolean("review_enabled",false))}
@@ -98,35 +100,49 @@ fun RuiBuilderApp(){
   val requestedPrompt=prompt.trim()
   if(requestedPrompt.isBlank())return
   messages.add(ChatLine(requestedPrompt,true))
-  busy=true;status="AI 正在生成 Android 專案…"
+  busy=true;operationProgress=0.08f;operationStep="步驟 1/3：連線雲端模型";status="步驟 1/3：正在連線雲端模型…"
   try{
+   operationStep="步驟 2/3：模型正在理解需求並生成 Android 程式碼";status=operationStep
    val result=api(endpoint,"/api/projects/generate",JSONObject().put("prompt",requestedPrompt).put("review_enabled",reviewEnabled),null)
+   operationProgress=0.88f;operationStep="步驟 3/3：驗證專案檔案與 Gradle 結構";status=operationStep
    val obj=result.getJSONObject("files");val map=mutableMapOf<String,String>()
    val keys=obj.keys();while(keys.hasNext()){val key=keys.next();map[key]=obj.getString(key)}
    projectFiles=map
    projectName=result.optString("project_name","RuiGeneratedApp")
    saveHistory(requestedPrompt,projectName,"","專案已生成")
    messages.add(ChatLine("專案已生成：${result.optString("project_name","RuiGeneratedApp")}，共 ${map.size} 個檔案。\n${result.optString("notes","")}\n確認後按「雲端編譯 APK」。",false))
-   status="專案生成完成（${map.size} 個檔案）"
+   operationProgress=1f;operationStep="完成：專案已生成";status="完成：專案生成成功（${map.size} 個檔案）"
   }catch(e:Exception){status="生成失敗：${e.message?:e.javaClass.simpleName}";messages.add(ChatLine("生成失敗：${e.message?:e.javaClass.simpleName}",false))}
   finally{busy=false}
  }
 
  suspend fun build(){
   if(projectFiles.isEmpty()){status="請先生成 Android 專案";return}
-  busy=true;status="正在提交雲端 APK Worker…"
+  busy=true;operationProgress=0.03f;operationStep="步驟 1/6：提交專案到雲端 Worker";status=operationStep
   try{
    val files=JSONObject();projectFiles.forEach{(k,v)->files.put(k,v)}
    val queued=api(endpoint,"/api/build",JSONObject().put("files",files),null)
-   jobId=queued.getString("job_id");status="已排入編譯佇列：$jobId"
+   jobId=queued.getString("job_id");operationProgress=0.05f;operationStep="步驟 2/6：雲端工作目錄建立中";status="已排入編譯佇列：$jobId"
    saveHistory(prompt,projectName,jobId,"排隊中")
    var finished=false
    repeat(190){
     if(!finished){
      delay(4000)
      val state=api(endpoint,"/api/build/$jobId",null,null)
+     val stage=state.optString("stage")
+     operationProgress=(state.optDouble("progress",35.0)/100.0).toFloat().coerceIn(0f,1f)
+     operationStep=when(stage){
+      "preparing"->"步驟 2/6：建立雲端工作目錄"
+      "writing_files"->"步驟 3/6：寫入 Kotlin、Manifest 與 Gradle 專案檔"
+      "validating"->"步驟 4/6：檢查專案結構與必要設定"
+      "gradle"->"步驟 5/6：Gradle 解析依賴並編譯 APK（此階段可能較久）"
+      "packaging"->"步驟 6/6：整理 APK 並準備下載"
+      "complete"->"完成：APK 已可下載"
+      else->state.optString("message","雲端 Worker 正在處理")
+     }
+     status=operationStep
      when(state.optString("status")){
-      "success"->{finished=true;status="APK 編譯完成！按「下載 APK」取得檔案";saveHistory(prompt,projectName,jobId,"編譯成功");messages.add(ChatLine("雲端編譯成功，APK 大小：${state.optLong("size")} bytes。",false))}
+      "success"->{finished=true;operationProgress=1f;operationStep="完成：APK 已編譯並封裝";status="APK 編譯完成！按「下載 APK」取得檔案";saveHistory(prompt,projectName,jobId,"編譯成功");messages.add(ChatLine("雲端編譯成功，APK 大小：${state.optLong("size")} bytes。",false))}
       "failed"->{finished=true;saveHistory(prompt,projectName,jobId,"編譯失敗");status="編譯失敗：${state.optString("error","請檢查專案")}"}
       else->status="雲端編譯中…（$jobId）"
      }
@@ -141,7 +157,7 @@ fun RuiBuilderApp(){
   Scaffold(containerColor=Bg,topBar={TopAppBar(title={Column{Text("Rui AI Builder",fontWeight=FontWeight.Bold,style=MaterialTheme.typography.titleLarge);Text("ANDROID STUDIO · CLOUD BUILD",color=Muted,style=MaterialTheme.typography.labelSmall)}},actions={Row{TextButton(onClick={showHistory=true}){Text("歷史")};TextButton(onClick={showSettings=true}){Text("設定")}}},colors=TopAppBarDefaults.topAppBarColors(containerColor=Bg,titleContentColor=Color.White))},
   bottomBar={Column(Modifier.fillMaxWidth().background(Bg).padding(12.dp)){
    Text(status,color=Muted,style=MaterialTheme.typography.labelSmall)
-   if(busy){Spacer(Modifier.height(5.dp));LinearProgressIndicator(Modifier.fillMaxWidth())}
+   if(busy){Spacer(Modifier.height(5.dp));Text(operationStep,color=Accent,style=MaterialTheme.typography.labelSmall);LinearProgressIndicator(progress={operationProgress},modifier=Modifier.fillMaxWidth())}
    Spacer(Modifier.height(6.dp))
    OutlinedTextField(value=prompt,onValueChange={prompt=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("例如：製作一款有相機、相簿與濾鏡的圖片編輯 App…",color=Muted)},minLines=2,maxLines=5,shape=RoundedCornerShape(18.dp),enabled=!busy,colors=OutlinedTextFieldDefaults.colors(focusedBorderColor=Accent,focusedContainerColor=Panel,unfocusedContainerColor=Panel))
    Spacer(Modifier.height(8.dp))
