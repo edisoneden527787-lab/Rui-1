@@ -20,11 +20,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.credentials.CredentialManager
-import androidx.credentials.CustomCredential
-import androidx.credentials.GetCredentialRequest
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
-import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -49,42 +44,20 @@ fun RuiBuilderApp(){
  val context= LocalContext.current
  val prefs= remember{context.getSharedPreferences("rui_builder",Context.MODE_PRIVATE)}
  var endpoint by remember{mutableStateOf(prefs.getString("endpoint","https://api-production-3704ca67.up.railway.app")?:"https://api-production-3704ca67.up.railway.app")}
- var webClientId by remember{mutableStateOf(prefs.getString("web_client_id","")?:"")}
- var idToken by remember{mutableStateOf(prefs.getString("session_token","")?:"")}
- var userEmail by remember{mutableStateOf(prefs.getString("user_email","")?:"")}
  var prompt by remember{mutableStateOf("")}
  var busy by remember{mutableStateOf(false)}
  var showSettings by remember{mutableStateOf(false)}
- var status by remember{mutableStateOf(if(idToken.isNotBlank()) "已恢復登入：$userEmail" else "尚未連接雲端 AI 服務")}
+ var status by remember{mutableStateOf("免登入模式：可直接使用雲端 AI")}
  var projectFiles by remember{mutableStateOf<Map<String,String>>(emptyMap())}
  var jobId by remember{mutableStateOf("")}
- val messages= remember{mutableStateListOf(ChatLine("你好！我是 Rui AI APK Builder。登入 Google 後，描述你的 App，我會產生 Android 專案並交給雲端 Worker 編譯 APK。",false))}
+ val messages= remember{mutableStateListOf(ChatLine("你好！我是 Rui AI APK Builder。免登入模式已啟用，描述你的 App，我會產生 Android 專案並交給雲端 Worker 編譯 APK。",false))}
  val scope= rememberCoroutineScope()
 
- suspend fun login(){
-  if(webClientId.isBlank()){status="請先在服務設定填入 Google OAuth Web Client ID";return}
-  try{
-   val option=GetGoogleIdOption.Builder().setServerClientId(webClientId.trim()).setFilterByAuthorizedAccounts(false).setAutoSelectEnabled(false).build()
-   val request=GetCredentialRequest.Builder().addCredentialOption(option).build()
-   val credential=CredentialManager.create(context).getCredential(context,request).credential
-   if(credential is CustomCredential && credential.type==GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL){
-    val google=GoogleIdTokenCredential.createFrom(credential.data)
-    val googleToken=google.idToken
-    val result=api(endpoint,"/api/auth/google",JSONObject().put("id_token",googleToken),null)
-    val session=result.getString("session_token")
-    idToken=session;userEmail=result.optString("email",google.id)
-    prefs.edit().putString("session_token",session).putString("user_email",userEmail).apply()
-    status="Google 已授權雲端 API，登入狀態已保存：$userEmail"
-   }else status="Google 登入未取得有效憑證"
-  }catch(e:Exception){status="Google 登入失敗：${e.message?: "請檢查 OAuth 設定"}"}
- }
-
  suspend fun generate(){
-  if(idToken.isBlank()){status="請先使用 Google 登入";return}
   if(prompt.isBlank())return
   busy=true;status="AI 正在生成 Android 專案…"
   try{
-   val result=api(endpoint,"/api/projects/generate",JSONObject().put("prompt",prompt),idToken)
+   val result=api(endpoint,"/api/projects/generate",JSONObject().put("prompt",prompt),null)
    val obj=result.getJSONObject("files");val map=mutableMapOf<String,String>()
    val keys=obj.keys();while(keys.hasNext()){val key=keys.next();map[key]=obj.getString(key)}
    projectFiles=map
@@ -95,18 +68,17 @@ fun RuiBuilderApp(){
  }
 
  suspend fun build(){
-  if(idToken.isBlank()){status="請先使用 Google 登入";return}
   if(projectFiles.isEmpty()){status="請先生成 Android 專案";return}
   busy=true;status="正在提交雲端 APK Worker…"
   try{
    val files=JSONObject();projectFiles.forEach{(k,v)->files.put(k,v)}
-   val queued=api(endpoint,"/api/build",JSONObject().put("files",files),idToken)
+   val queued=api(endpoint,"/api/build",JSONObject().put("files",files),null)
    jobId=queued.getString("job_id");status="已排入編譯佇列：$jobId"
    var finished=false
    repeat(190){
     if(!finished){
      delay(4000)
-     val state=api(endpoint,"/api/build/$jobId",null,idToken)
+     val state=api(endpoint,"/api/build/$jobId",null,null)
      when(state.optString("status")){
       "success"->{finished=true;status="APK 編譯完成！按「下載 APK」取得檔案";messages.add(ChatLine("雲端編譯成功，APK 大小：${state.optLong("size")} bytes。",false))}
       "failed"->{finished=true;status="編譯失敗：${state.optString("error","請檢查專案")}"}
@@ -120,7 +92,7 @@ fun RuiBuilderApp(){
  }
 
  MaterialTheme(colorScheme=darkColorScheme(primary=Accent,background=Bg,surface=Panel,onBackground=Color.White,onSurface=Color.White)){
-  Scaffold(containerColor=Bg,topBar={TopAppBar(title={Column{Text("Rui AI APK Builder",fontWeight=FontWeight.Bold);Text(if(userEmail.isBlank())"雲端 Android 開發工作台" else userEmail,color=Muted,style=MaterialTheme.typography.labelSmall)}},actions={TextButton(onClick={showSettings=true}){Text("設定")};TextButton(enabled=!busy,onClick={ scope.launch{login()} }){Text(if(idToken.isBlank())"Google 登入" else "已登入")}},colors=TopAppBarDefaults.topAppBarColors(containerColor=Bg,titleContentColor=Color.White))},
+  Scaffold(containerColor=Bg,topBar={TopAppBar(title={Column{Text("Rui AI APK Builder",fontWeight=FontWeight.Bold);Text("免登入 · 雲端 Android 開發工作台",color=Muted,style=MaterialTheme.typography.labelSmall)}},actions={TextButton(onClick={showSettings=true}){Text("設定")}},colors=TopAppBarDefaults.topAppBarColors(containerColor=Bg,titleContentColor=Color.White))},
   bottomBar={Column(Modifier.fillMaxWidth().background(Bg).padding(12.dp)){
    Text(status,color=Muted,style=MaterialTheme.typography.labelSmall);Spacer(Modifier.height(6.dp))
    OutlinedTextField(value=prompt,onValueChange={prompt=it},modifier=Modifier.fillMaxWidth(),placeholder={Text("描述你要開發的 Android App…",color=Muted)},minLines=2,maxLines=5,shape=RoundedCornerShape(16.dp),enabled=!busy)
@@ -131,7 +103,7 @@ fun RuiBuilderApp(){
    }
    if(jobId.isNotBlank())Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()){
     OutlinedButton(onClick={scope.launch{try{val s=api(endpoint,"/api/build/$jobId",null,idToken);status="編譯狀態：${s.optString("status")}"}catch(e:Exception){status=e.message?:"查詢失敗"}}},modifier=Modifier.weight(1f)){Text("查詢狀態")}
-    OutlinedButton(onClick={ downloadApk(context,endpoint,jobId,idToken) },modifier=Modifier.weight(1f)){Text("下載 APK")}
+    OutlinedButton(onClick={ downloadApk(context,endpoint,jobId) },modifier=Modifier.weight(1f)){Text("下載 APK")}
    }
   }}){padding->
    Column(Modifier.fillMaxSize().padding(padding).padding(horizontal=14.dp)){
@@ -146,12 +118,11 @@ fun RuiBuilderApp(){
    }
   }
   if(showSettings){
-   var draft by remember{mutableStateOf(endpoint)};var clientDraft by remember{mutableStateOf(webClientId)}
+   var draft by remember{mutableStateOf(endpoint)}
    AlertDialog(onDismissRequest={showSettings=false},title={Text("雲端服務設定")},text={Column{
-    Text("API 網址與 Google OAuth Web Client ID（不是 API Key）。",style=MaterialTheme.typography.bodySmall)
+    Text("設定雲端 API 網址；此版本不需要帳號或 OAuth。",style=MaterialTheme.typography.bodySmall)
     Spacer(Modifier.height(8.dp));OutlinedTextField(value=draft,onValueChange={draft=it},label={Text("API 服務網址")},placeholder={Text("https://your-domain.example")},singleLine=true)
-    Spacer(Modifier.height(8.dp));OutlinedTextField(value=clientDraft,onValueChange={clientDraft=it},label={Text("Google OAuth Web Client ID")},singleLine=true)
-   }},confirmButton={TextButton(onClick={endpoint=draft.trim().trimEnd('/');webClientId=clientDraft.trim();prefs.edit().putString("endpoint",endpoint).putString("web_client_id",webClientId).apply();status="設定已儲存";showSettings=false}){Text("儲存")}},dismissButton={TextButton(onClick={showSettings=false}){Text("取消")}})
+   }},confirmButton={TextButton(onClick={endpoint=draft.trim().trimEnd('/');prefs.edit().putString("endpoint",endpoint).apply();status="設定已儲存";showSettings=false}){Text("儲存")}},dismissButton={TextButton(onClick={showSettings=false}){Text("取消")}})
   }
  }
 }
@@ -170,14 +141,13 @@ private suspend fun api(base:String,path:String,body:JSONObject?,token:String?):
  JSONObject(text)
 }
 
-private fun downloadApk(context:Context,base:String,job:String,token:String){
+private fun downloadApk(context:Context,base:String,job:String){
  try{
   val request=DownloadManager.Request(Uri.parse(base.trimEnd('/')+"/api/build/$job/download"))
    .setTitle("Rui AI APK")
    .setDescription("下載雲端編譯完成的 APK")
    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS,"Rui-$job.apk")
-   .addRequestHeader("Authorization","Bearer $token")
   val manager=context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
   manager.enqueue(request)
  }catch(_:Exception){}
