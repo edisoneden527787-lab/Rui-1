@@ -99,41 +99,7 @@ class GenerateRequest(BaseModel):
 class BuildRequest(BaseModel):
     files: dict[str,str]
 def require_user(auth: str | None = None):
-    # Anonymous mode: no Google OAuth or user account required.
     return {"sub":"anonymous","name":"Guest"}
-
-@app.get("/health")
-async def health():
-    return {"status":"ok","model":active_model(),"worker":WORKER_URL,"login_required":False,"moderation_filter":False}
-
-@app.get("/api/models")
-async def list_models():
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            r=await client.get(f"{OLLAMA_URL.rstrip('/')}/api/tags")
-            r.raise_for_status()
-            data=r.json()
-        return {"active":active_model(),"models":[{"name":x.get("name",""),"size":x.get("size",0),"modified_at":x.get("modified_at","")} for x in data.get("models",[])]}
-    except httpx.HTTPError as exc:
-        raise HTTPException(502,f"無法取得雲端模型清單：{exc}") from exc
-
-class SelectModelRequest(BaseModel):
-    name: str = Field(min_length=1,max_length=200)
-
-@app.post("/api/models/select")
-async def select_model(body: SelectModelRequest):
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            r=await client.get(f"{OLLAMA_URL.rstrip('/')}/api/tags")
-            r.raise_for_status()
-            available={x.get("name","") for x in r.json().get("models",[])}
-        if body.name not in available:
-            raise HTTPException(404,"找不到指定模型，請先匯入 GGUF 或下載模型。")
-        MODEL_STATE.write_text(json.dumps({"name":body.name},ensure_ascii=False))
-        return {"active":body.name}
-    except HTTPException: raise
-    except httpx.HTTPError as exc:
-        raise HTTPException(502,f"模型服務錯誤：{exc}") from exc
 
 @app.post("/api/models/import")
 async def import_gguf(file: UploadFile = File(...), model_name: str = Form("")):
@@ -146,25 +112,65 @@ async def import_gguf(file: UploadFile = File(...), model_name: str = Form("")):
     temp=DATA/(uuid.uuid4().hex+".gguf")
     total=0
     try:
+        # Stream the upload to disk; never hold the raw GGUF and its Base64 copy together.
         with temp.open("wb") as out:
             while True:
-                chunk=await file.read(4*1024*1024)
+                chunk=await file.read(1024*1024)
                 if not chunk: break
                 total+=len(chunk)
                 if total>MAX_GGUF_BYTES:
-                    raise HTTPException(413,f"GGUF 超過目前上傳上限 {MAX_GGUF_BYTES//(1024*1024)} MB。")
+                    raise HTTPException(413,f"GGUF 檔案有 {total//(1024*1024)} MB，超過伺服器上限 {MAX_GGUF_BYTES//(1024*1024)} MB。")
                 out.write(chunk)
         if total==0: raise HTTPException(400,"上傳的 GGUF 檔案是空的。")
-        encoded=base64.b64encode(temp.read_bytes()).decode("ascii")
-        payload={"name":safe_name,"modelfile":"FROM ./model.gguf\n","stream":False,"files":{"model.gguf":encoded}}
+
+        # Ollama's /api/create accepts Base64 file content. Stream the JSON body
+        # in aligned chunks to avoid creating another full-size in-memory copy.
+        payload=json.dumps({"name":safe_name,"modelfile":"FROM ./model.gguf\\n","stream":False,"files":{"model.gguf":""}},separators=(",",":"))
+        if not payload.endswith('""}}'):
+            raise RuntimeError("無法建立 GGUF 匯入請求。")
+        prefix=payload[:-4].encode("utf-8")
+        async def request_body():
+            yield prefix
+            with temp.open("rb") as source:
+                while True:
+                    chunk=source.read(3*1024*1024)
+                    if not chunk: break
+                    yield base64.b64encode(chunk)
+            yield b'"}}'
         async with httpx.AsyncClient(timeout=None) as client:
-            response=await client.post(f"{OLLAMA_URL.rstrip('/')}/api/create",json=payload,timeout=1800)
-            response.raise_for_status()
+            response=await client.post(
+                f"{OLLAMA_URL.rstrip('/')}/api/create",
+                content=request_body(),
+                headers={"Content-Type":"application/json"},
+                timeout=1800
+            )
+            if response.is_error:
+                detail=response.text[:3000]
+                raise HTTPException(502,f"Ollama 建立模型失敗（HTTP {response.status_code}）：{detail}")
+            try:
+                result=response.json()
+            except Exception:
+                result={}
+            if result.get("error"):
+                raise HTTPException(502,f"Ollama 匯入失敗：{str(result['error'])[:2000]}")
+            tags=await client.get(f"{OLLAMA_URL.rstrip('/')}/api/tags")
+            tags.raise_for_status()
+            installed={item.get("name","") for item in tags.json().get("models",[])}
+            if safe_name not in installed:
+                raise HTTPException(502,"Ollama 回報建立完成，但模型清單找不到新模型；未切換目前模型。")
+            check=await client.post(f"{OLLAMA_URL.rstrip('/')}/api/show",json={"name":safe_name})
+            if check.is_error:
+                raise HTTPException(502,f"模型已建立但載入驗證失敗（HTTP {check.status_code}）：{check.text[:1500]}")
         MODEL_STATE.write_text(json.dumps({"name":safe_name},ensure_ascii=False))
-        return {"ok":True,"name":safe_name,"size":total,"active":safe_name}
-    except HTTPException: raise
+        return {"ok":True,"name":safe_name,"size":total,"active":safe_name,"verified":True,"message":"GGUF 已匯入，且 Ollama 已確認模型存在。"}
+    except HTTPException:
+        raise
+    except OSError as exc:
+        raise HTTPException(507,f"雲端暫存空間不足，GGUF 未能完成匯入：{exc}") from exc
     except httpx.HTTPError as exc:
-        raise HTTPException(502,f"GGUF 匯入 Ollama 失敗：{exc}") from exc
+        raise HTTPException(502,f"GGUF 與 Ollama 通訊失敗：{exc}") from exc
+    except Exception as exc:
+        raise HTTPException(500,f"GGUF 匯入程序錯誤：{type(exc).__name__}: {exc}") from exc
     finally:
         await file.close()
         temp.unlink(missing_ok=True)
