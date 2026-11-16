@@ -11,6 +11,23 @@ class Build(BaseModel):
     owner:str=""
 @app.get("/health")
 def health(): return {"status":"ok","worker":"android-gradle"}
+
+@app.get("/build/{job_id}")
+def build_status(job_id:str, x_worker_secret:str|None=Header(default=None)):
+    if x_worker_secret!=SECRET: raise HTTPException(403,"forbidden")
+    if not job_id.isalnum() or len(job_id)>32: raise HTTPException(400,"bad job id")
+    status=ROOT/job_id/"status.json"
+    if not status.exists(): raise HTTPException(404,"job not found")
+    return json.loads(status.read_text())
+
+@app.get("/build/{job_id}/download")
+def download(job_id:str, x_worker_secret:str|None=Header(default=None)):
+    if x_worker_secret!=SECRET: raise HTTPException(403,"forbidden")
+    if not job_id.isalnum() or len(job_id)>32: raise HTTPException(400,"bad job id")
+    apk=ROOT/job_id/"app-debug.apk"
+    if not apk.exists(): raise HTTPException(404,"apk not ready")
+    from fastapi.responses import FileResponse
+    return FileResponse(apk,filename=f"rui-{job_id}.apk",media_type="application/vnd.android.package-archive")
 @app.post("/build")
 def build(body:Build, x_worker_secret:str|None=Header(default=None)):
     if x_worker_secret!=SECRET: raise HTTPException(403,"forbidden")
@@ -18,7 +35,7 @@ def build(body:Build, x_worker_secret:str|None=Header(default=None)):
     job=ROOT/body.job_id
     if job.exists(): shutil.rmtree(job)
     project=job/"project"; project.mkdir(parents=True)
-    (job/"status.json").write_text(json.dumps({"status":"building","stage":"preparing"}))
+    (job/"status.json").write_text(json.dumps({"status":"building","stage":"preparing","owner":body.owner}))
     for name,content in body.files.items():
         p=Path(name)
         if p.is_absolute() or ".." in p.parts or len(content)>500000: continue
@@ -27,7 +44,7 @@ def build(body:Build, x_worker_secret:str|None=Header(default=None)):
         target.write_text(content,encoding="utf-8")
     required=["settings.gradle.kts","build.gradle.kts","app/build.gradle.kts","app/src/main/AndroidManifest.xml"]
     if not all((project/x).is_file() for x in required):
-        (job/"status.json").write_text(json.dumps({"status":"failed","error":"缺少必要 Gradle 檔案"}))
+        (job/"status.json").write_text(json.dumps({"status":"failed","error":"缺少必要 Gradle 檔案","owner":body.owner}))
         return {"status":"failed"}
     env=os.environ.copy(); env["ANDROID_HOME"]=env.get("ANDROID_HOME","/opt/android-sdk")
     (project/"local.properties").write_text(f"sdk.dir={env['ANDROID_HOME']}\n")
@@ -40,11 +57,11 @@ def build(body:Build, x_worker_secret:str|None=Header(default=None)):
         candidates=list(project.glob("**/outputs/apk/debug/*.apk"))
         if not candidates: raise RuntimeError("Gradle 成功但沒有找到 debug APK")
         shutil.copy2(candidates[0],job/"app-debug.apk")
-        (job/"status.json").write_text(json.dumps({"status":"success","stage":"complete","apk":"app-debug.apk","size":(job/"app-debug.apk").stat().st_size}))
+        (job/"status.json").write_text(json.dumps({"status":"success","stage":"complete","apk":"app-debug.apk","size":(job/"app-debug.apk").stat().st_size,"owner":body.owner}))
         return {"status":"success","size":(job/"app-debug.apk").stat().st_size}
     except subprocess.TimeoutExpired:
-        (job/"status.json").write_text(json.dumps({"status":"failed","error":"Gradle 編譯逾時（15 分鐘）"}))
+        (job/"status.json").write_text(json.dumps({"status":"failed","error":"Gradle 編譯逾時（15 分鐘）","owner":body.owner}))
         return {"status":"failed"}
     except Exception as exc:
-        (job/"status.json").write_text(json.dumps({"status":"failed","error":str(exc)}))
+        (job/"status.json").write_text(json.dumps({"status":"failed","error":str(exc),"owner":body.owner}))
         return {"status":"failed"}
