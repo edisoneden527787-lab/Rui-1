@@ -52,7 +52,7 @@ def build(body:Build, x_worker_secret:str|None=Header(default=None)):
     try:
         result=subprocess.run(cmd,cwd=project,env=env,text=True,capture_output=True,timeout=900)
         if result.returncode!=0:
-            (job/"status.json").write_text(json.dumps({"status":"failed","stage":"gradle","error":(result.stderr+"\n"+result.stdout)[-12000:]}))
+            (job/"status.json").write_text(json.dumps({"status":"failed","stage":"gradle","error":(result.stderr+"\n"+result.stdout)[-12000:],"owner":body.owner}))
             return {"status":"failed"}
         candidates=list(project.glob("**/outputs/apk/debug/*.apk"))
         if not candidates: raise RuntimeError("Gradle 成功但沒有找到 debug APK")
