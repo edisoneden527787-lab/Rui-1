@@ -12,6 +12,16 @@ android {
         versionCode = 1
         versionName = "1.0.0"
     }
+    // This repository contains other Android prototypes under the same folder.
+    // Compile only the DIST Grabber source tree for this standalone application.
+    sourceSets {
+        getByName("main") {
+            java {
+                setSrcDirs(listOf("src/main/java"))
+                include("com/rui/aibuilder/**")
+            }
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
