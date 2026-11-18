@@ -71,3 +71,11 @@ jobs:
           path: ${{ runner.temp }}/ai-app-debug.apk
           if-no-files-found: error
           retention-days: 30
+      - name: 建立可下載 APK Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="dist-grabber-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          gh release create "$TAG" "$RUNNER_TEMP/ai-app-debug.apk" \
+            --title "DIST Grabber ${GITHUB_RUN_NUMBER}" \
+            --notes "DIST Grabber Android APK；由 GitHub Actions 雲端編譯。"
