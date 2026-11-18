@@ -18,6 +18,7 @@ class MainActivity : Activity() {
     private lateinit var result: TextView
     private lateinit var scan: Button
     private var lastJson = "[]"
+    private var loginAttempted = false
     private val navy = Color.rgb(18, 28, 48)
     private val blue = Color.rgb(45, 105, 210)
 
@@ -101,7 +102,10 @@ class MainActivity : Activity() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     status.text = "頁面已載入：${url ?: ""}"
                     scan.isEnabled = true
-                    web.postDelayed({ openCountyLogin(auto = true) }, 500)
+                    if (!loginAttempted) {
+                        loginAttempted = true
+                        web.postDelayed({ openCountyLogin(auto = true) }, 500)
+                    }
                 }
             }
             loadUrl("https://school.tc.edu.tw")
