@@ -115,9 +115,9 @@ class MainActivity : Activity() {
         val js = """
           (function(){
             const nodes=[...document.querySelectorAll('a,button,[role=button],input[type=button],input[type=submit]')];
-            const hit=nodes.find(e=>((e.innerText||e.value||e.getAttribute('aria-label')||'').replace(/\\s/g,'')).includes('縣市帳號登入'));
+            const hit=nodes.find(e=>((e.innerText||e.value||e.getAttribute('aria-label')||'').replace(/\s/g,'')).includes('縣市帳號登入'));
             if(hit){hit.click();return '已點擊縣市帳號登入';}
-            const text=[...document.querySelectorAll('body *')].find(e=>e.children.length===0 && ((e.innerText||'').replace(/\\s/g,'')).includes('縣市帳號登入'));
+            const text=[...document.querySelectorAll('body *')].find(e=>e.children.length===0 && ((e.innerText||'').replace(/\s/g,'')).includes('縣市帳號登入'));
             if(text){text.click();return '已點擊縣市帳號登入文字';}
             return '目前頁面未找到登入入口，請在下方網站區手動開啟';
           })();
@@ -171,7 +171,7 @@ class MainActivity : Activity() {
             const scripts=[...document.scripts].map(s=>s.textContent||'').join('\n');
             const patterns=[
               /(?:dist|district)\s*[:=]\s*['"]([^'"]{1,80})['"]/ig,
-              /[?&]dist=([^&'"\\s]+)/ig,
+              /[?&]dist=([^&'"\s]+)/ig,
               /selectDistrict\s*\(\s*['"]([^'"]{1,80})['"]/ig
             ];
             for(const re of patterns){let m;while((m=re.exec(scripts))!==null)add(decodeURIComponent(m[1]),'','script-pattern');}
